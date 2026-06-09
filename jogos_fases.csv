@@ -1,0 +1,73 @@
+fase,time_mandante,time_visitante,data_hora,grupo
+Fase de Grupos,México,África do Sul,2026-06-11 16:00,Grupo A
+Fase de Grupos,Coreia do Sul,Rep. Tcheca,2026-06-11 23:00,Grupo A
+Fase de Grupos,México,Rep. Tcheca,2026-06-18 13:00,Grupo A
+Fase de Grupos,África do Sul,Coreia do Sul,2026-06-18 22:00,Grupo A
+Fase de Grupos,México,Coreia do Sul,2026-06-24 22:00,Grupo A
+Fase de Grupos,África do Sul,Rep. Tcheca,2026-06-24 22:00,Grupo A
+Fase de Grupos,Canadá,Bósnia,2026-06-12 16:00,Grupo B
+Fase de Grupos,Catar,Suíça,2026-06-13 16:00,Grupo B
+Fase de Grupos,Canadá,Suíça,2026-06-18 16:00,Grupo B
+Fase de Grupos,Bósnia,Catar,2026-06-18 19:00,Grupo B
+Fase de Grupos,Canadá,Catar,2026-06-24 16:00,Grupo B
+Fase de Grupos,Bósnia,Suíça,2026-06-24 16:00,Grupo B
+Fase de Grupos,Brasil,Marrocos,2026-06-13 19:00,Grupo C
+Fase de Grupos,Haiti,Escócia,2026-06-13 22:00,Grupo C
+Fase de Grupos,Brasil,Escócia,2026-06-19 19:00,Grupo C
+Fase de Grupos,Marrocos,Haiti,2026-06-19 21:30,Grupo C
+Fase de Grupos,Brasil,Haiti,2026-06-24 19:00,Grupo C
+Fase de Grupos,Marrocos,Escócia,2026-06-24 19:00,Grupo C
+Fase de Grupos,EUA,Paraguai,2026-06-12 22:00,Grupo D
+Fase de Grupos,Austrália,Turquia,2026-06-14 01:00,Grupo D
+Fase de Grupos,EUA,Austrália,2026-06-19 16:00,Grupo D
+Fase de Grupos,Turquia,Paraguai,2026-06-20 00:00,Grupo D
+Fase de Grupos,EUA,Turquia,2026-06-25 23:00,Grupo D
+Fase de Grupos,Paraguai,Austrália,2026-06-25 23:00,Grupo D
+Fase de Grupos,Alemanha,Curaçao,2026-06-14 14:00,Grupo E
+Fase de Grupos,Costa do Marfim,Equador,2026-06-14 20:00,Grupo E
+Fase de Grupos,Alemanha,Equador,2026-06-20 17:00,Grupo E
+Fase de Grupos,Curaçao,Costa do Marfim,2026-06-20 21:00,Grupo E
+Fase de Grupos,Alemanha,Costa do Marfim,2026-06-25 17:00,Grupo E
+Fase de Grupos,Curaçao,Equador,2026-06-25 17:00,Grupo E
+Fase de Grupos,Holanda,Japão,2026-06-14 17:00,Grupo F
+Fase de Grupos,Suécia,Tunísia,2026-06-14 23:00,Grupo F
+Fase de Grupos,Holanda,Tunísia,2026-06-20 14:00,Grupo F
+Fase de Grupos,Japão,Suécia,2026-06-21 01:00,Grupo F
+Fase de Grupos,Holanda,Suécia,2026-06-25 20:00,Grupo F
+Fase de Grupos,Japão,Tunísia,2026-06-25 20:00,Grupo F
+Fase de Grupos,Bélgica,Egito,2026-06-15 16:00,Grupo G
+Fase de Grupos,Irã,Nova Zelândia,2026-06-15 22:00,Grupo G
+Fase de Grupos,Bélgica,Irã,2026-06-21 16:00,Grupo G
+Fase de Grupos,Nova Zelândia,Egito,2026-06-21 22:00,Grupo G
+Fase de Grupos,Bélgica,Irã,2026-06-27 00:00,Grupo G
+Fase de Grupos,Egito,Nova Zelândia,2026-06-27 00:00,Grupo G
+Fase de Grupos,Espanha,Cabo Verde,2026-06-15 13:00,Grupo H
+Fase de Grupos,Arábia Saudita,Uruguai,2026-06-15 19:00,Grupo H
+Fase de Grupos,Espanha,Uruguai,2026-06-21 13:00,Grupo H
+Fase de Grupos,Cabo Verde,Arábia Saudita,2026-06-21 19:00,Grupo H
+Fase de Grupos,Espanha,Arábia Saudita,2026-06-26 21:00,Grupo H
+Fase de Grupos,Cabo Verde,Uruguai,2026-06-26 21:00,Grupo H
+Fase de Grupos,França,Senegal,2026-06-16 16:00,Grupo I
+Fase de Grupos,Iraque,Noruega,2026-06-16 19:00,Grupo I
+Fase de Grupos,França,Noruega,2026-06-22 18:00,Grupo I
+Fase de Grupos,Senegal,Iraque,2026-06-22 21:00,Grupo I
+Fase de Grupos,França,Iraque,2026-06-26 16:00,Grupo I
+Fase de Grupos,Senegal,Noruega,2026-06-26 16:00,Grupo I
+Fase de Grupos,Argentina,Argélia,2026-06-16 22:00,Grupo J
+Fase de Grupos,Áustria,Jordânia,2026-06-17 01:00,Grupo J
+Fase de Grupos,Argentina,Jordânia,2026-06-22 14:00,Grupo J
+Fase de Grupos,Argélia,Áustria,2026-06-23 00:00,Grupo J
+Fase de Grupos,Argentina,Áustria,2026-06-27 23:00,Grupo J
+Fase de Grupos,Argélia,Jordânia,2026-06-27 23:00,Grupo J
+Fase de Grupos,Portugal,RD Congo,2026-06-17 14:00,Grupo K
+Fase de Grupos,Uzbequistão,Colômbia,2026-06-17 23:00,Grupo K
+Fase de Grupos,Portugal,Colômbia,2026-06-23 14:00,Grupo K
+Fase de Grupos,RD Congo,Uzbequistão,2026-06-23 23:00,Grupo K
+Fase de Grupos,Portugal,Uzbequistão,2026-06-27 20:30,Grupo K
+Fase de Grupos,RD Congo,Colômbia,2026-06-27 20:30,Grupo K
+Fase de Grupos,Inglaterra,Croácia,2026-06-17 17:00,Grupo L
+Fase de Grupos,Gana,Panamá,2026-06-17 20:00,Grupo L
+Fase de Grupos,Inglaterra,Panamá,2026-06-23 17:00,Grupo L
+Fase de Grupos,Croácia,Gana,2026-06-23 20:00,Grupo L
+Fase de Grupos,Inglaterra,Gana,2026-06-27 18:00,Grupo L
+Fase de Grupos,Croácia,Panamá,2026-06-27 18:00,Grupo L
