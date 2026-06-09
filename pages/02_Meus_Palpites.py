@@ -79,14 +79,35 @@ with tab_games:
                         ),
                     )
 
-                if st.form_submit_button(f"Salvar palpites — {phase['name']}", type="primary"):
-                    saved = 0
-                    for gid, (hs, as_) in predictions_input.items():
-                        db.save_prediction(user_id, gid, int(hs), int(as_))
-                        saved += 1
-                    st.success(f"{saved} palpites salvos (com histórico de versões).")
-                    st.rerun()
+                # 1. Garante que a variável de controle existe no st.session_state
+                if f"salvando_{phase['id']}" not in st.session_state:
+                    st.session_state[f"salvando_{phase['id']}"] = False
 
+                # 2. Passamos o parâmetro disabled se o botão já tiver sido clicado uma vez
+                if st.form_submit_button(
+                    f"Salvar palpites — {phase['name']}", 
+                    type="primary", 
+                    disabled=st.session_state[f"salvando_{phase['id']}"]
+                ):
+                    # 3. Ativa a trava imediatamente para cliques repetidos baterem no botão desabilitado
+                    st.session_state[f"salvando_{phase['id']}"] = True
+                    
+                    try:
+                        saved = 0
+                        for gid, (hs, as_) in predictions_input.items():
+                            db.save_prediction(user_id, gid, int(hs), int(as_))
+                            saved += 1
+                        st.success(f"{saved} palpites salvos (com histórico de versões).")
+                        
+                    except Exception as e:
+                        st.error(f"Ocorreu um erro ao salvar: {e}")
+                        
+                    finally:
+                        # 4. Desativa a trava após terminar de processar o banco e recarrega a página liso
+                        st.session_state[f"salvando_{phase['id']}"] = False
+                        st.rerun()
+
+# ------------ FIM DA SUBSTITUIÇÃO ------------
     st.divider()
     st.subheader("Meus palpites registrados")
     filter_phase = st.selectbox(

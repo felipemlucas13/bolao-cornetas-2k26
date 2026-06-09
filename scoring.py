@@ -160,13 +160,16 @@ def build_user_stats() -> list[UserStats]:
         correct_diffs = 0
 
         for p in finished_preds:
-            game_points += p["points"]
+            
             cls = classify_prediction(
                 p["home_score"],
                 p["away_score"],
                 p["result_home"],
                 p["result_away"],
             )
+
+            game_points += cls["points"]
+
             if cls["exact"]:
                 exact_scores += 1
             if cls["correct_result"]:
