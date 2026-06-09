@@ -5,6 +5,96 @@ import streamlit as st
 
 import database as db
 import scoring
+# --- NOVOS IMPORTS E FUNÇÃO DO PDF (ADICIONAR NO TOPO) ---
+import io
+from datetime import datetime
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+def formatar_data_hora(iso_string: str | None) -> str:
+    if not iso_string:
+        return "-"
+    try:
+        clean_date = iso_string.split("+")[0].split(".")[0].replace("T", " ")
+        dt = datetime.strptime(clean_date, "%Y-%m-%d %H:%M:%S")
+        dias_ptbr = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
+        dia_semana = dias_ptbr[dt.weekday()]
+        return f"{dia_semana}, {dt.strftime('%d/%m %H:%M')}"
+    except Exception:
+        return str(iso_string)
+
+def gerar_pdf_palpites(my_preds: list, full_name: str) -> bytes:
+    """Gera um PDF em memória com os palpites do usuário."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter,
+        rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
+    )
+    story = []
+    
+    styles = getSampleStyleSheet()
+    style_title = ParagraphStyle(
+        'TitleStyle', parent=styles['Heading1'], 
+        textColor=colors.HexColor("#1E3A8A"), fontSize=22, spaceAfter=6
+    )
+    style_subtitle = ParagraphStyle(
+        'SubTitleStyle', parent=styles['Normal'], 
+        textColor=colors.HexColor("#4B5563"), fontSize=12, spaceAfter=20
+    )
+    style_cell = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=10)
+    style_header = ParagraphStyle(
+        'HeaderStyle', parent=styles['Normal'], 
+        textColor=colors.white, fontSize=11, fontName="Helvetica-Bold"
+    )
+
+    story.append(Paragraph("🎯 Meus Palpites — Bolão Copa FIFA 2k26", style_title))
+    story.append(Paragraph(f"Participante: {full_name} · Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", style_subtitle))
+    story.append(Spacer(1, 10))
+
+    table_data = [[
+        Paragraph("Fase", style_header), 
+        Paragraph("Jogo", style_header), 
+        Paragraph("Palpite", style_header), 
+        Paragraph("Resultado", style_header), 
+        Paragraph("Pontos", style_header), 
+        Paragraph("V.", style_header)
+    ]]
+    
+    for p in my_preds:
+        res = f"{p['result_home']} x {p['result_away']}" if p["finished"] else "-"
+        pts = str(p["points"]) if p["finished"] else "-"
+        
+        table_data.append([
+            Paragraph(p["phase_name"], style_cell),
+            Paragraph(f"{p['team_home']} x {p['team_away']}", style_cell),
+            Paragraph(f"{p['home_score']} x {p['away_score']}", style_cell),
+            Paragraph(res, style_cell),
+            Paragraph(pts, style_cell),
+            Paragraph(str(p["version"]), style_cell)
+        ])
+
+    t = Table(table_data, colWidths=[90, 180, 70, 70, 50, 30])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")), 
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#F9FAFB"), colors.white]), 
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")), 
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+    ]))
+    
+    story.append(t)
+    doc.build(story)
+    
+    buffer.seek(0)
+    return buffer.getvalue()
+# --------------------------------------------------------
 
 st.set_page_config(page_title="Meus Palpites — Bolão 2k26", layout="wide")
 
@@ -48,7 +138,8 @@ with tab_games:
                 for game in games:
                     label = f"{game['team_home']} x {game['team_away']}"
                     if game.get("game_datetime"):
-                        label += f" — {game['game_datetime']}"
+                        data_amigavel = formatar_data_hora(game["game_datetime"])
+                        label += f" — {data_amigavel}"
                     if game.get("group_name"):
                         if "Grupo" in game["group_name"]:
                             label += f" ({game['group_name']})"
@@ -107,7 +198,6 @@ with tab_games:
                         st.session_state[f"salvando_{phase['id']}"] = False
                         st.rerun()
 
-# ------------ FIM DA SUBSTITUIÇÃO ------------
     st.divider()
     st.subheader("Meus palpites registrados")
     filter_phase = st.selectbox(
@@ -135,10 +225,20 @@ with tab_games:
                     "Resultado": result,
                     "Pontos": pts if p["finished"] else "-",
                     "Versão": p["version"],
-                    "Atualizado": p["updated_at"],
+                    "Atualizado": formatar_data_hora(p["updated_at"]),
                 }
             )
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        
+        # --- O BOTÃO DO PDF ENTRA AQUI LOGO ABAIXO DA SUA TABELA ---
+        pdf_data = gerar_pdf_palpites(my_preds, user["full_name"])
+        st.download_button(
+            label="📥 Exportar Palpites em PDF",
+            data=pdf_data,
+            file_name=f"palpites_{user['username']}.pdf",
+            mime="application/pdf",
+            type="secondary"
+        )
     else:
         st.info("Você ainda não enviou palpites.")
 

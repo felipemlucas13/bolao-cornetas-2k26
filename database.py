@@ -5,6 +5,87 @@ from __future__ import annotations
 import streamlit as st
 from datetime import datetime
 from supabase import create_client
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+def gerar_pdf_palpites(my_preds: list, full_name: str) -> bytes:
+    """Gera um PDF em memória com os palpites do usuário."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter,
+        rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
+    )
+    story = []
+    
+    # Estilos de texto
+    styles = getSampleStyleSheet()
+    style_title = ParagraphStyle(
+        'TitleStyle', parent=styles['Heading1'], 
+        textColor=colors.HexColor("#1E3A8A"), fontSize=22, spaceAfter=6
+    )
+    style_subtitle = ParagraphStyle(
+        'SubTitleStyle', parent=styles['Normal'], 
+        textColor=colors.HexColor("#4B5563"), fontSize=12, spaceAfter=20
+    )
+    style_cell = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=10)
+    style_header = ParagraphStyle(
+        'HeaderStyle', parent=styles['Normal'], 
+        textColor=colors.white, fontSize=11, fontName="Helvetica-Bold"
+    )
+
+    # Cabeçalho do PDF
+    story.append(Paragraph("🎯 Meus Palpites — Bolão Copa FIFA 2k26", style_title))
+    story.append(Paragraph(f"Participante: {full_name} · Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", style_subtitle))
+    story.append(Spacer(1, 10))
+
+    # Montar os dados da tabela
+    # Cabeçalho da tabela
+    table_data = [[
+        Paragraph("Fase", style_header), 
+        Paragraph("Jogo", style_header), 
+        Paragraph("Palpite", style_header), 
+        Paragraph("Resultado", style_header), 
+        Paragraph("Pontos", style_header), 
+        Paragraph("V.", style_header)
+    ]]
+    
+    # Linhas com os palpites
+    for p in my_preds:
+        res = f"{p['result_home']} x {p['result_away']}" if p["finished"] else "-"
+        pts = str(p["points"]) if p["finished"] else "-"
+        
+        table_data.append([
+            Paragraph(p["phase_name"], style_cell),
+            Paragraph(f"{p['team_home']} x {p['team_away']}", style_cell),
+            Paragraph(f"{p['home_score']} x {p['away_score']}", style_cell),
+            Paragraph(res, style_cell),
+            Paragraph(pts, style_cell),
+            Paragraph(str(p["version"]), style_cell)
+        ])
+
+    # Criar a tabela e aplicar o design estilizado (azul escuro e linhas alternadas cinza)
+    t = Table(table_data, colWidths=[90, 180, 70, 70, 50, 30])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")), # Cor do cabeçalho
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#F9FAFB"), colors.white]), # Linhas alternadas
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")), # Bordas finas cinza
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+    ]))
+    
+    story.append(t)
+    doc.build(story)
+    
+    buffer.seek(0)
+    return buffer.getvalue()
 
 # --- Inicialização do Cliente Supabase ---
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
