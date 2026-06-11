@@ -243,6 +243,7 @@ with tab_games:
         st.info("Você ainda não enviou palpites.")
 
 # --- Special predictions ---
+# --- Special predictions ---
 with tab_special:
     st.subheader("Campeão, Vice e Artilheiro")
     st.markdown(
@@ -251,28 +252,54 @@ with tab_special:
     )
 
     sp = db.get_special_prediction(user_id)
-    with st.form("special_preds"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            champion = st.text_input(
-                "Campeão",
-                value=sp["champion"] if sp and sp.get("champion") else "",
-            )
-        with c2:
-            vice = st.text_input(
-                "Vice-campeão",
-                value=sp["vice"] if sp and sp.get("vice") else "",
-            )
-        with c3:
-            scorer = st.text_input(
-                "Artilheiro",
-                value=sp["top_scorer"] if sp and sp.get("top_scorer") else "",
-            )
-        if st.form_submit_button("Salvar palpites especiais", type="primary"):
-            db.save_special_prediction(user_id, champion, vice, scorer)
-            st.success("Palpites especiais salvos (versão registrada no histórico).")
-            st.rerun()
 
+    # 1. TRAVA DE DATA: Defina o dia e hora de início do primeiro jogo da Copa
+    # Exemplo: 11 de Junho de 2026 às 16:00 (mude o horário se o jogo for outra hora)
+    from datetime import datetime
+    data_limite = datetime(2026, 6, 11, 16, 0, 0)
+    agora = datetime.now()
+
+    # 2. SE JÁ PASSOU DA HORA: Mostra os dados travados (Apenas Leitura)
+    if agora > data_limite:
+        st.warning("🔒 Os palpites especiais estão trancados porque a Copa já começou!")
+        
+        with st.form("special_preds_locked"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.text_input("Campeão", value=sp["champion"] if sp and sp.get("champion") else "", disabled=True)
+            with c2:
+                st.text_input("Vice-campeão", value=sp["vice"] if sp and sp.get("vice") else "", disabled=True)
+            with c3:
+                st.text_input("Artilheiro", value=sp["top_scorer"] if sp and sp.get("top_scorer") else "", disabled=True)
+            
+            # Botão falso/desabilitado apenas para manter o design do form sem permitir salvar
+            st.form_submit_button("Prazo encerrado", disabled=True)
+
+    # 3. SE AINDA NÃO PASSOU DA HORA: Seu formulário original funciona normal
+    else:
+        with st.form("special_preds"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                champion = st.text_input(
+                    "Campeão",
+                    value=sp["champion"] if sp and sp.get("champion") else "",
+                )
+            with c2:
+                vice = st.text_input(
+                    "Vice-campeão",
+                    value=sp["vice"] if sp and sp.get("vice") else "",
+                )
+            with c3:
+                scorer = st.text_input(
+                    "Artilheiro",
+                    value=sp["top_scorer"] if sp and sp.get("top_scorer") else "",
+                )
+            if st.form_submit_button("Salvar palpites especiais", type="primary"):
+                db.save_special_prediction(user_id, champion, vice, scorer)
+                st.success("Palpites especiais salvos (versão registrada no histórico).")
+                st.rerun()
+
+    # O cálculo dos pontos continua aqui embaixo, visível em ambos os casos
     if sp:
         settings = db.get_tournament_settings()
         pc, pv, ps = scoring.calculate_special_points(
