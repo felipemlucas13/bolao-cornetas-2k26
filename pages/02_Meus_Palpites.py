@@ -256,7 +256,7 @@ with tab_special:
     # 1. TRAVA DE DATA: Defina o dia e hora de início do primeiro jogo da Copa
     # Exemplo: 11 de Junho de 2026 às 16:00 (mude o horário se o jogo for outra hora)
     from datetime import datetime
-    data_limite = datetime(2026, 6, 11, 16, 0, 0)
+    data_limite = datetime(2026, 6, 11, 20, 0, 0)
     agora = datetime.now()
 
     # 2. SE JÁ PASSOU DA HORA: Mostra os dados travados (Apenas Leitura)
