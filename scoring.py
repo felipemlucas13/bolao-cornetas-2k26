@@ -203,19 +203,30 @@ def dashboard_metrics() -> dict:
     max_pts = max(s.total_points for s in stats)
     leaders = [s for s in stats if s.total_points == max_pts]
 
-    # 2. Melhor da fase
+    # 2. Melhor da fase (com empates reais)
+
     phases = db.list_phases()
+    
     best_phase = None
-    best_phase_user = None
+    best_phase_users = []
     best_phase_pts = -1
+    
     for phase in phases:
         df = phase_ranking(phase["id"])
-        if not df.empty:
-            top = df.iloc[0]
-            if top["Pontos"] > best_phase_pts:
-                best_phase_pts = top["Pontos"]
-                best_phase_user = top["Participante"]
-                best_phase = phase["name"]
+    
+        if df.empty:
+            continue
+    
+        top_pts = int(df["Pontos"].max())
+    
+        if top_pts > best_phase_pts:
+            best_phase_pts = top_pts
+            best_phase = phase["name"]
+    
+            best_phase_users = (
+                df[df["Pontos"] == top_pts]["Participante"]
+                .tolist()
+            )
 
     # 3. Reis do Exato com Empates Reais
     max_exatos = max(s.exact_scores for s in stats)
