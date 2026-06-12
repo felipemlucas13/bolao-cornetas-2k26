@@ -250,7 +250,7 @@ def dashboard_metrics() -> dict:
     zebra_kings, max_zebra_pts = _find_zebra_kings_mem(user_palpites)
 
     return {
-        "leaders": [l.full_name for l in leaders], "max_points": max_pts, "max_exact_leader": leaders[0].exact_scores,
+        "leaders": [l.full_name for l in leaders], "max_points": max_pts, "max_exact_leader": max(l.exact_scores for l in leaders),
         "best_phase": {"phase": best_phase, "user": best_phase_user, "points": best_phase_pts},
         "exact_kings": [e.full_name for e in exact_kings], "max_exact": max_exatos,
         "hat_tricks": hat_tricks.get("users", []), "max_hat_tricks": hat_tricks.get("count", 0), "max_streak": hat_tricks.get("streak", 0),
