@@ -192,25 +192,31 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
+    # 1. Extração de líderes e maiores pontuações
     max_pts = max(s.total_points for s in stats)
-    leaders = [s for s in stats if s.total_points == max_pts]
+    leaders_list = [s.full_name for s in stats if s.total_points == max_pts]
+    max_exact_leader_val = stats[0].exact_scores if stats else 0
 
+    # 2. Melhor da fase
     phases = db.list_phases()
-    best_phase = None
-    best_phase_user = None
-    best_phase_pts = -1
+    best_phase_name = None
+    best_phase_user_name = None
+    best_phase_points_val = -1
+    
     for phase in phases:
         df = phase_ranking(phase["id"])
         if not df.empty:
             top = df.iloc[0]
-            if top["Points"] > best_phase_pts:
-                best_phase_pts = top["Points"]
-                best_phase_user = top["Participante"]
-                best_phase = phase["name"]
+            if top["Points"] > best_phase_points_val:
+                best_phase_points_val = top["Points"]
+                best_phase_user_name = top["Participante"]
+                best_phase_name = phase["name"]
 
+    # 3. Reis do Exato (Suporta múltiplos empatados)
     max_exatos = max(s.exact_scores for s in stats)
-    exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
+    exact_kings_list = [s.full_name for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
+    # Cache de palpites local em memória pura
     user_palpites = {}
     for s in stats:
         try:
@@ -218,49 +224,43 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    hat_tricks = _find_hat_trick_winners_mem(user_palpites)
-    climb_user, climb_delta = _find_biggest_climb(stats)
-    zebra_kings, max_zebra_pts = _find_zebra_kings_mem(user_palpites)
+    # 4. Estatísticas avançadas processadas em lote
+    hat_tricks_res = _find_hat_trick_winners_mem(user_palpites)
+    zebra_kings_list, max_zebra_pts_val = _find_zebra_kings_mem(user_palpites)
+
+    # 5. Escalada calculada de forma isolada com segurança de tipos externa
+    climb_user_name = None
+    climb_delta_val = 0
+    try:
+        earliest_snaps = db.get_earliest_snapshots()
+        if earliest_snaps:
+            earliest = {item["user_id"]: item for item in earliest_snaps}
+            current_pos = {item.user_id: idx + 1 for idx, item in enumerate(stats)}
+            for s in stats:
+                if s.user_id in earliest:
+                    old_pos = earliest[s.user_id]["position"]
+                    new_pos = current_pos[s.user_id]
+                    delta = old_pos - new_pos
+                    if delta > climb_delta_val:
+                        climb_delta_val = delta
+                        climb_user_name = s.full_name
+    except Exception:
+        pass
 
     return {
-        "leaders": [l.full_name for l in leaders], 
-        "max_points": max_pts, 
-        "max_exact_leader": leaders[0].exact_scores if leaders else 0,
-        "best_phase": {"phase": best_phase, "user": best_phase_user, "points": best_phase_pts},
-        "exact_kings": [e.full_name for e in exact_kings], 
+        "leaders": leaders_list,
+        "max_points": max_pts,
+        "max_exact_leader": max_exact_leader_val,
+        "best_phase": {"phase": best_phase_name, "user": best_phase_user_name, "points": best_phase_points_val},
+        "exact_kings": exact_kings_list,
         "max_exact": max_exatos,
-        "hat_tricks": hat_tricks.get("users", []), 
-        "max_hat_tricks": hat_tricks.get("count", 0), 
-        "max_streak": hat_tricks.get("streak", 0),
-        "biggest_climb": {"user": climb_user, "delta": climb_delta},
-        "zebra_kings": zebra_kings, 
-        "max_zebra_pts": max_zebra_pts
+        "hat_tricks": hat_tricks_res.get("users", []),
+        "max_hat_tricks": hat_tricks_res.get("count", 0),
+        "max_streak": hat_tricks_res.get("streak", 0),
+        "biggest_climb": {"user": climb_user_name, "delta": climb_delta_val},
+        "zebra_kings": zebra_kings_list,
+        "max_zebra_pts": max_zebra_pts_val
     }
-
-
-def _find_biggest_climb(current_stats: list[UserStats]) -> tuple[str | None, int]:
-    try:
-        earliest = {s["user_id"]: s for s in db.get_earliest_snapshots()}
-    except Exception:
-        return None, 0
-    if not earliest:
-        return None, 0
-
-    current_pos = {s.user_id: i + 1 for i, s in enumerate(current_stats)}
-    best_user = None
-    best_delta = 0
-
-    for s in current_stats:
-        if s.user_id not in earliest:
-            continue
-        old_pos = earliest[s.user_id]["position"]
-        new_pos = current_pos[s.user_id]
-        delta = old_pos - new_pos
-        if delta > best_delta:
-            best_delta = delta
-            best_user = s.full_name
-
-    return best_user, best_delta
 
 
 def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
