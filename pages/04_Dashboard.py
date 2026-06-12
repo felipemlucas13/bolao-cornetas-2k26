@@ -22,34 +22,35 @@ if not metrics:
     st.info("Dashboard disponível após cadastro de participantes e palpites.")
     st.stop()
 
-# Puxamos a lista de estatísticas recalculada para encontrar TODOS os empatados
+# Puxamos a lista bruta de participantes
 stats = scoring.build_user_stats()
 
 # --- FUNÇÃO GENÉRICA PARA FORMATAR OS NOMES EMPATADOS ---
 def formatar_nomes_empatados(lista_nomes: list[str]) -> str:
     if not lista_nomes:
         return "Ninguém ainda"
-    if len(lista_nomes) == 1:
-        return lista_nomes[0]
-    if len(lista_nomes) == 2:
-        return f"{lista_nomes[0]} e {lista_nomes[1]}"
-    # Mostra o primeiro da lista e quantos mais estão empatados com ele
-    return f"{lista_nomes[0]} (+{len(lista_nomes) - 1})"
+    # Remove duplicados mantendo a ordem
+    lista_limpa = list(dict.fromkeys(lista_nomes))
+    if len(lista_limpa) == 1:
+        return lista_limpa[0]
+    if len(lista_limpa) == 2:
+        return f"{lista_limpa[0]} e {lista_limpa[1]}"
+    return f"{lista_limpa[0]} (+{len(lista_limpa) - 1})"
 
 
-# --- 1. LÓGICA DE EMPATE: LÍDER GERAL ---
+# --- 1. DETECÇÃO REAL DE EMPATE: LÍDER GERAL ---
 nomes_lideres = []
-max_pts = stats[0].total_points if stats else 0
-max_exatos_lider = stats[0].exact_scores if stats else 0
+max_pts = max(s.total_points for s in stats) if stats else 0
 
 if stats:
+    # O líder real é quem tem a maior pontuação global neste momento
     for s in stats:
-        if s.total_points == max_pts and s.exact_scores == max_exatos_lider:
+        if s.total_points == max_pts:
             nomes_lideres.append(s.full_name)
 label_lider = formatar_nomes_empatados(nomes_lideres)
 
 
-# --- 2. LÓGICA DE EMPATE: REI DO PLACAR EXATO ---
+# --- 2. DETECÇÃO REAL DE EMPATE: REI DO PLACAR EXATO ---
 nomes_exatos = []
 max_exatos = max(s.exact_scores for s in stats) if stats else 0
 if max_exatos > 0:
@@ -60,7 +61,7 @@ label_exato = formatar_nomes_empatados(nomes_exatos)
 valor_exato = f"{max_exatos} exatos" if max_exatos > 0 else "0 exatos"
 
 
-# --- 3. LÓGICA DE EMPATE: HAT-TRICK ---
+# --- 3. DETECÇÃO REAL DE EMPATE: HAT-TRICK ---
 nomes_hat_trick = []
 max_hat_tricks = 0
 max_streak = 0
@@ -98,7 +99,7 @@ if max_hat_tricks > 0:
 label_hat_trick = formatar_nomes_empatados(nomes_hat_trick)
 
 
-# --- 4. LÓGICA DE EMPATE: REI DAS ZEBRAS ---
+# --- 4. DETECÇÃO REAL DE EMPATE: REI DAS ZEBRAS ---
 nomes_zebra = []
 max_zebra_pts = -1
 dados_zebra = []
@@ -139,7 +140,8 @@ if max_zebra_pts > 0:
 label_zebra = formatar_nomes_empatados(nomes_zebra)
 
 
-# --- 5. TRATAMENTO DO SNAPSHOT DE MAIOR ESCALADA ---
+# --- 5. TRATAMENTO DE OUTROS METRICS DO DICIONÁRIO ---
+best_phase = metrics["best_phase"]
 climb_raw = metrics.get("biggest_climb")
 climb_user = None
 climb_delta = 0
@@ -155,18 +157,14 @@ elif isinstance(climb_raw, (set, tuple)):
         elif isinstance(item, int) and not isinstance(item, bool):
             climb_delta = item
 
-best_phase = metrics["best_phase"]
-
-# --- RENDERIZAÇÃO CORRIGIDA DOS CARDS NO STREAMLIT ---
-# Linha Superior
+# --- EXIBIÇÃO FINAL ---
 c1, c2, c3 = st.columns(3)
 
 with c1:
     st.markdown("### 👑 Líder Geral")
     st.metric(
-        label=label_lider,  # CORRIGIDO: Agora usa a string contendo os empates!
+        label=label_lider,
         value=f"{max_pts} pts",
-        delta=f"{max_exatos_lider} exatos" if max_exatos_lider > 0 else None,
     )
 
 with c2:
@@ -183,14 +181,12 @@ with c2:
 with c3:
     st.markdown("### 🎯 Rei do Placar Exato")
     st.metric(
-        label=label_exato,  # CORRIGIDO: Agora usa a string com todos os reis do exato!
+        label=label_exato,
         value=valor_exato,
-        delta=f"{max_pts} pts totais" if max_exatos > 0 else None,
     )
 
 st.divider()
 
-# Linha Inferior
 c4, c5, c6 = st.columns(3)
 
 with c4:
@@ -198,7 +194,7 @@ with c4:
     st.caption("Mais sequências de 3+ placares exatos consecutivos")
     if max_hat_tricks > 0:
         st.metric(
-            label=label_hat_trick,  # CORRIGIDO
+            label=label_hat_trick,
             value=f"{max_hat_tricks} hat-tricks",
             delta=f"Maior sequência: {max_streak}",
         )
@@ -222,7 +218,7 @@ with c6:
     if max_zebra_pts > 0:
         total_zebras = next((d["count"] for d in dados_zebra if d["pts"] == max_zebra_pts), 0)
         st.metric(
-            label=label_zebra,  # CORRIGIDO
+            label=label_zebra,
             value=f"{max_zebra_pts} pts",
             delta=f"{total_zebras} zebras",
         )
