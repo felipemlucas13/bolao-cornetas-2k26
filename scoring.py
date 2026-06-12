@@ -149,11 +149,14 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
                 if p.get("result_home") is None or p.get("result_away") is None:
                     continue
                 cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
-                pts += cls["points"]
+                pts += int(cls["points"])
                 if cls["exact"]: exacts += 1
         rows.append({
-            "Participante": u["full_name"], "Usuário": u["username"],
-            "Pontos": pts, "Placares Exatos": exacts, "lottery": _lottery_value(uid, u["username"])
+            "Participante": str(u["full_name"]), 
+            "Usuário": str(u["username"]),
+            "Pontos": int(pts), # Sempre inteiro, nunca "-"
+            "Placares Exatos": int(exacts), 
+            "lottery": _lottery_value(uid, u["username"])
         })
     df = pd.DataFrame(rows)
     if not df.empty:
@@ -342,3 +345,78 @@ def _find_zebra_kings_mem(palpites_por_usuario: dict) -> tuple[list[str], int]:
 
     winners = [u["name"] for u in user_zebras if u["pts"] == max_z_pts] if max_z_pts > 0 else []
     return winners, max_z_pts
+    
+def calculate_special_points(champion_pred: str | None, vice_pred: str | None, scorer_pred: str | None, settings: dict | None) -> tuple[int, int, int]:
+    """Calcula os pontos dos palpites especiais baseado nas escolhas do usuário e configurações atuais."""
+    pc, pv, ps = 0, 0, 0
+    
+    if not settings:
+        return pc, pv, ps
+
+    # 1. Validação do Campeão
+    if champion_pred and settings.get("champion_team"):
+        if str(champion_pred).strip().lower() == str(settings["champion_team"]).strip().lower():
+            # Altere o valor da pontuação (ex: 10, 15, etc) conforme a regra do seu bolão
+            pc = 10 
+
+    # 2. Validação do Vice
+    if vice_pred and settings.get("vice_team"):
+        if str(vice_pred).strip().lower() == str(settings["vice_team"]).strip().lower():
+            pv = 10
+
+    # 3. Validação do Artilheiro
+    if scorer_pred and settings.get("top_scorer"):
+        if str(scorer_pred).strip().lower() == str(settings["top_scorer"]).strip().lower():
+            ps = 10
+
+    return pc, pv, ps
+
+def can_view_all_predictions(status: str) -> bool:
+    """Retorna True se a fase já foi fechada ou finalizada, permitindo auditoria dos outros."""
+    return status in ["Fechada", "Finalizada"]
+
+def user_statistics(user_id: int) -> dict:
+    """Calcula estatísticas detalhadas de um usuário para a página de palpites."""
+    stats_list = build_user_stats()
+    
+    # Encontra o objeto UserStats do usuário específico
+    user_data = next((s for s in stats_list if s.user_id == user_id), None)
+    
+    if not user_data:
+        return {
+            "total_predictions": 0,
+            "finished_predictions": 0,
+            "exact_scores": 0,
+            "total_points": 0,
+            "correct_results": 0,
+            "by_phase": {}
+        }
+        
+    # Inicializa estrutura de dados por fase de forma segura para o Pandas/PyArrow
+    by_phase_data = {}
+    try:
+        # Busca todas as fases cadastradas
+        for phase in db.list_phases():
+            df_p = phase_ranking(phase["id"])
+            if not df_p.empty:
+                # Localiza a linha do participante no ranking da fase
+                user_row = df_p[df_p["Participante"] == user_data.full_name]
+                if not user_row.empty:
+                    row = user_row.iloc[0]
+                    by_phase_data[phase["name"]] = {
+                        "palpites": int(user_data.predictions_count), # Valor total aproximado
+                        "pontos": int(row.get("Pontos", 0)),          # Garante tipo numérico inteiro
+                        "exatos": int(row.get("Placares Exatos", 0)), # Garante tipo numérico inteiro
+                        "corretos": 0 # Pode deixar zerado ou mapear se tiver a coluna
+                    }
+    except Exception:
+        pass
+
+    return {
+        "total_predictions": int(user_data.predictions_count),
+        "finished_predictions": int(user_data.exact_scores + user_data.correct_results + user_data.correct_diffs),
+        "exact_scores": int(user_data.exact_scores),
+        "total_points": int(user_data.total_points),
+        "correct_results": int(user_data.correct_results),
+        "by_phase": by_phase_data
+    }
