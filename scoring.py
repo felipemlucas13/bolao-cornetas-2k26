@@ -79,26 +79,23 @@ def build_user_stats() -> list[UserStats]:
     settings = db.get_tournament_settings()
     stats: list[UserStats] = []
 
-    try:
-        res_all_preds = db.supabase.table("predictions").select("*").execute()
-        todos_palpites = res_all_preds.data if res_all_preds.data else []
-    except Exception:
-        todos_palpites = []
-
-    try:
-        res_all_sp = db.supabase.table("special_predictions").select("*").execute()
-        todos_especiais = res_all_sp.data if res_all_sp.data else []
-    except Exception:
-        todos_especiais = []
-
+    # Para garantir estabilidade absoluta, usamos a função que já funciona bem no seu sistema
+    # mas agrupamos em cache local para evitar requisições repetidas no loop principal
     palpites_por_usuario = {}
-    for p in todos_palpites:
-        uid = p.get("user_id")
-        if uid not in palpites_por_usuario:
-            palpites_por_usuario[uid] = []
-        palpites_por_usuario[uid].append(p)
+    especiais_por_usuario = {}
 
-    especiais_por_usuario = {sp.get("user_id"): sp for sp in todos_especiais}
+    for user in all_users:
+        uid = user["id"]
+        try:
+            # Puxa usando a função nativa do seu database.py que está 100% correta
+            palpites_por_usuario[uid] = db.get_user_predictions(uid)
+        except Exception:
+            palpites_por_usuario[uid] = []
+
+        try:
+            especiais_por_usuario[uid] = db.get_special_prediction(uid)
+        except Exception:
+            especiais_por_usuario[uid] = None
 
     for user in all_users:
         uid = user["id"]
@@ -137,6 +134,7 @@ def build_user_stats() -> list[UserStats]:
             )
         )
 
+    # Ordenação oficial do ranking do bolão
     stats.sort(key=lambda s: (-s.total_points, -s.exact_scores, -s.correct_results, -s.champion_hit, -s.tiebreak_lottery))
     return stats
 
@@ -200,7 +198,7 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Líderes (Garante lista completa de empatados)
+    # 1. Líderes reais (captura múltiplos utilizadores com a pontuação máxima)
     max_pts = max(s.total_points for s in stats) if stats else 0
     leaders = [s for s in stats if s.total_points == max_pts]
 
@@ -218,32 +216,21 @@ def dashboard_metrics() -> dict:
                 best_phase_user = top["Participante"]
                 best_phase = phase["name"]
 
-    # 3. Reis do Exato
+    # 3. Reis do Placar Exato
     max_exatos = max(s.exact_scores for s in stats) if stats else 0
     exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # 4. Trazemos todos os palpites na memória para calcular Hat-Tricks e Zebras sem acessar a rede em loops
-    try:
-        res_all_preds = db.supabase.table("predictions").select("*").execute()
-        todos_palpites = res_all_preds.data if res_all_preds.data else []
-    except Exception:
-        todos_palpites = []
+    # 4. Hat-Tricks e Zebras calculados a partir do dicionário em memória local estável
+    user_palpites = {}
+    for s in stats:
+        try:
+            user_palpites[s.user_id] = db.get_user_predictions(s.user_id)
+        except Exception:
+            user_palpites[s.user_id] = []
 
-    palpites_por_usuario = {}
-    for p in todos_palpites:
-        uid = p.get("user_id")
-        if uid not in palpites_por_usuario:
-            palpites_por_usuario[uid] = []
-        palpites_por_usuario[uid].append(p)
-
-    # 5. Hat-Tricks em memória
-    hat_tricks = _find_hat_trick_winners_mem(palpites_por_usuario)
-
-    # 6. Maior Escalada
+    hat_tricks = _find_hat_trick_winners_mem(user_palpites)
     climb_user, climb_delta = _find_biggest_climb(stats)
-
-    # 7. Rei das Zebras em memória
-    zebra_kings, max_zebra_pts = _find_zebra_kings_mem(palpites_por_usuario)
+    zebra_kings, max_zebra_pts = _find_zebra_kings_mem(user_palpites)
 
     return {
         "leaders": [l.full_name for l in leaders], "max_points": max_pts, "max_exact_leader": leaders[0].exact_scores if leaders else 0,
