@@ -192,7 +192,7 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Múltiplos líderes coletados sem desempate artificial
+    # 1. Coleta múltiplos líderes reais empatados
     max_pts = max(s.total_points for s in stats)
     leaders = [s for s in stats if s.total_points == max_pts]
 
@@ -210,11 +210,11 @@ def dashboard_metrics() -> dict:
                 best_phase_user = top["Participante"]
                 best_phase = phase["name"]
 
-    # 3. Reis do Exato reais
+    # 3. Reis do Exato reais empatados
     max_exatos = max(s.exact_scores for s in stats)
     exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # 4. Memória em Cache Protegida (Fim do RemoteProtocolError)
+    # Cache local para evitar loops redundantes no banco
     user_palpites = {}
     for s in stats:
         try:
@@ -222,7 +222,7 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # Processamento local seguro
+    # Processadores locais seguros passados por parâmetro
     hat_tricks = _find_hat_trick_winners_mem(user_palpites)
     climb_user, climb_delta = _find_biggest_climb(stats)
     zebra_kings, max_zebra_pts = _find_zebra_kings_mem(user_palpites)
@@ -251,6 +251,7 @@ def _find_biggest_climb(current_stats: list[UserStats]) -> tuple[str | None, int
     if not earliest:
         return None, 0
 
+    # FIX: Variavel amarrada corretamente ao parametro da funcao para banir o NameError
     current_pos = {s.user_id: i + 1 for i, s in enumerate(current_stats)}
     best_user = None
     best_delta = 0
