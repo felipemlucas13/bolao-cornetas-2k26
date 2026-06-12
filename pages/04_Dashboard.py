@@ -1,7 +1,6 @@
 """Dashboard page — Bolão Copa FIFA 2k26."""
 
 import streamlit as st
-
 import database as db
 import scoring
 
@@ -22,154 +21,40 @@ if not metrics:
     st.info("Dashboard disponível após cadastro de participantes e palpites.")
     st.stop()
 
-# Puxamos a lista bruta de participantes
-stats = scoring.build_user_stats()
-
-# --- FUNÇÃO GENÉRICA PARA FORMATAR OS NOMES EMPATADOS ---
-def formatar_nomes_empatados(lista_nomes: list[str]) -> str:
+# --- FUNÇÃO FORMATADORA DE EMPATES ---
+def formatar_nomes(lista_nomes: list[str]) -> str:
     if not lista_nomes:
         return "Ninguém ainda"
-    # Remove duplicados mantendo a ordem
-    lista_limpa = list(dict.fromkeys(lista_nomes))
-    if len(lista_limpa) == 1:
-        return lista_limpa[0]
-    if len(lista_limpa) == 2:
-        return f"{lista_limpa[0]} e {lista_limpa[1]}"
-    return f"{lista_limpa[0]} (+{len(lista_limpa) - 1})"
+    if len(lista_nomes) == 1:
+        return lista_nomes[0]
+    if len(lista_nomes) == 2:
+        return f"{lista_nomes[0]} e {lista_nomes[1]}"
+    return f"{lista_nomes[0]} (+{len(lista_nomes) - 1})"
 
 
-# --- 1. DETECÇÃO REAL DE EMPATE: LÍDER GERAL ---
-nomes_lideres = []
-max_pts = max(s.total_points for s in stats) if stats else 0
+# Recupera as informações estruturadas com empates reais
+label_lider = formatar_nomes(metrics.get("leaders", []))
+label_exato = formatar_nomes(metrics.get("exact_kings", []))
+label_hat_trick = formatar_nomes(metrics.get("hat_tricks", []))
+label_zebra = formatar_nomes(metrics.get("zebra_kings", []))
 
-if stats:
-    # O líder real é quem tem a maior pontuação global neste momento
-    for s in stats:
-        if s.total_points == max_pts:
-            nomes_lideres.append(s.full_name)
-label_lider = formatar_nomes_empatados(nomes_lideres)
+best_phase = metrics.get("best_phase", {"phase": None, "user": None, "points": -1})
+climb = metrics.get("biggest_climb", {"user": None, "delta": 0})
 
-
-# --- 2. DETECÇÃO REAL DE EMPATE: REI DO PLACAR EXATO ---
-nomes_exatos = []
-max_exatos = max(s.exact_scores for s in stats) if stats else 0
-if max_exatos > 0:
-    for s in stats:
-        if s.exact_scores == max_exatos:
-            nomes_exatos.append(s.full_name)
-label_exato = formatar_nomes_empatados(nomes_exatos)
-valor_exato = f"{max_exatos} exatos" if max_exatos > 0 else "0 exatos"
-
-
-# --- 3. DETECÇÃO REAL DE EMPATE: HAT-TRICK ---
-nomes_hat_trick = []
-max_hat_tricks = 0
-max_streak = 0
-
-participantes = [u for u in db.list_participants() if u["active"]]
-dados_hat_trick = []
-
-for user in participantes:
-    preds = db.get_user_predictions(user["id"])
-    finished = sorted([p for p in preds if p["finished"]], key=lambda x: (x.get("game_datetime") or "", x["game_id"]))
-    streak = 0
-    m_streak = 0
-    h_tricks = 0
-    for p in finished:
-        cls = scoring.classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
-        if cls["exact"]:
-            streak += 1
-            if streak >= 3:
-                h_tricks += 1
-        else:
-            streak = 0
-        m_streak = max(m_streak, streak)
-    
-    if h_tricks > 0:
-        dados_hat_trick.append({"name": user["full_name"], "count": h_tricks, "streak": m_streak})
-        if h_tricks > max_hat_tricks:
-            max_hat_tricks = h_tricks
-
-if max_hat_tricks > 0:
-    for d in dados_hat_trick:
-        if d["count"] == max_hat_tricks:
-            nomes_hat_trick.append(d["name"])
-            if d["streak"] > max_streak:
-                max_streak = d["streak"]
-label_hat_trick = formatar_nomes_empatados(nomes_hat_trick)
-
-
-# --- 4. DETECÇÃO REAL DE EMPATE: REI DAS ZEBRAS ---
-nomes_zebra = []
-max_zebra_pts = -1
-dados_zebra = []
-
-for user in participantes:
-    preds = db.get_user_predictions(user["id"])
-    zebra_pts = 0
-    zebra_count = 0
-    for p in preds:
-        if not p["finished"]:
-            continue
-        rh, ra = p["result_home"], p["result_away"]
-        ph, pa = p["home_score"], p["away_score"]
-        actual = scoring.match_result(rh, ra)
-        predicted = scoring.match_result(ph, pa)
-
-        is_zebra = False
-        if actual == -1 and rh > ra + 1:
-            is_zebra = True
-        elif actual == 0 and abs(rh - ra) >= 2:
-            is_zebra = True
-        elif actual == 1 and ra > rh + 1:
-            is_zebra = True
-
-        if is_zebra and predicted == actual and p["points"] > 0:
-            zebra_pts += p["points"]
-            zebra_count += 1
-            
-    if zebra_pts > 0:
-        dados_zebra.append({"name": user["full_name"], "pts": zebra_pts, "count": zebra_count})
-        if zebra_pts > max_zebra_pts:
-            max_zebra_pts = zebra_pts
-
-if max_zebra_pts > 0:
-    for d in dados_zebra:
-        if d["pts"] == max_zebra_pts:
-            nomes_zebra.append(d["name"])
-label_zebra = formatar_nomes_empatados(nomes_zebra)
-
-
-# --- 5. TRATAMENTO DE OUTROS METRICS DO DICIONÁRIO ---
-best_phase = metrics["best_phase"]
-climb_raw = metrics.get("biggest_climb")
-climb_user = None
-climb_delta = 0
-
-if isinstance(climb_raw, dict):
-    climb_user = climb_raw.get("user")
-    climb_delta = climb_raw.get("delta", 0)
-elif isinstance(climb_raw, (set, tuple)):
-    climb_list = list(climb_raw)
-    for item in climb_list:
-        if isinstance(item, str):
-            climb_user = item
-        elif isinstance(item, int) and not isinstance(item, bool):
-            climb_delta = item
-
-# --- EXIBIÇÃO FINAL ---
+# --- LINHA SUPERIOR ---
 c1, c2, c3 = st.columns(3)
 
 with c1:
     st.markdown("### 👑 Líder Geral")
     st.metric(
         label=label_lider,
-        value=f"{max_pts} pts",
+        value=f"{metrics.get('max_points', 0)} pts",
+        delta=f"{metrics.get('max_exact_leader', 0)} exatos" if metrics.get('max_exact_leader', 0) > 0 else None,
     )
 
 with c2:
     st.markdown("### 🏅 Melhor da Fase")
-    if best_phase["phase"]:
+    if best_phase and best_phase.get("phase"):
         st.metric(
             label=best_phase["user"] or "-",
             value=f"{best_phase['points']} pts" if best_phase["points"] >= 0 else "-",
@@ -182,21 +67,22 @@ with c3:
     st.markdown("### 🎯 Rei do Placar Exato")
     st.metric(
         label=label_exato,
-        value=valor_exato,
+        value=f"{metrics.get('max_exact', 0)} exatos" if metrics.get('max_exact', 0) > 0 else "0 exatos",
     )
 
 st.divider()
 
+# --- LINHA INFERIOR ---
 c4, c5, c6 = st.columns(3)
 
 with c4:
     st.markdown("### ⚡ Hat-Trick")
     st.caption("Mais sequências de 3+ placares exatos consecutivos")
-    if max_hat_tricks > 0:
+    if metrics.get("max_hat_tricks", 0) > 0:
         st.metric(
             label=label_hat_trick,
-            value=f"{max_hat_tricks} hat-tricks",
-            delta=f"Maior sequência: {max_streak}",
+            value=f"{metrics['max_hat_tricks']} hat-tricks",
+            delta=f"Maior sequência: {metrics.get('max_streak', 0)}",
         )
     else:
         st.info("Nenhum hat-trick registrado ainda.")
@@ -204,10 +90,10 @@ with c4:
 with c5:
     st.markdown("### 📈 Maior Escalada")
     st.caption("Maior subida no ranking (snapshots)")
-    if climb_user and climb_delta > 0:
+    if climb and climb.get("user") and climb.get("delta", 0) > 0:
         st.metric(
-            label=climb_user,
-            value=f"+{climb_delta} posições",
+            label=climb["user"],
+            value=f"+{climb['delta']} posições",
         )
     else:
         st.info("Aguardando novas rodadas para computar variações.")
@@ -215,12 +101,10 @@ with c5:
 with c6:
     st.markdown("### 🦓 Rei das Zebras")
     st.caption("Mais pontos em acertos de resultados surpresa")
-    if max_zebra_pts > 0:
-        total_zebras = next((d["count"] for d in dados_zebra if d["pts"] == max_zebra_pts), 0)
+    if metrics.get("max_zebra_pts", 0) > 0:
         st.metric(
             label=label_zebra,
-            value=f"{max_zebra_pts} pts",
-            delta=f"{total_zebras} zebras",
+            value=f"{metrics['max_zebra_pts']} pts",
         )
     else:
         st.info("Nenhuma zebra registrada ainda.")
