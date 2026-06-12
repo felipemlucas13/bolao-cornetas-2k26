@@ -22,23 +22,80 @@ if not metrics:
     st.info("Dashboard disponível após cadastro de participantes e palpites.")
     st.stop()
 
+stats = scoring.build_user_stats()
+
+# --- FUNÇÕES AUXILIARES PARA CONTEMPLAR EMPATES ---
+def obter_lideres_formatados(lista_stats):
+    if not lista_stats:
+        return None, "Nenhum dado"
+    max_pts = lista_stats[0].total_points
+    # Se houver os critérios de desempate idênticos (pontos e exatos)
+    max_exatos = lista_stats[0].exact_scores
+    empatados = [s for s in lista_stats if s.total_points == max_pts and s.exact_scores == max_exatos]
+    
+    if len(empatados) == 1:
+        return empatados[0].full_name, f"{max_pts} pts"
+    elif len(empatados) == 2:
+        return f"{empatados[0].full_name} e {empatados[1].full_name}", f"{max_pts} pts"
+    else:
+        return f"{empatados[0].full_name} (+{len(empatados) - 1})", f"{max_pts} pts"
+
+def obter_reis_do_exato_formatados(lista_stats):
+    if not lista_stats:
+        return None, "0 exatos"
+    max_exatos = max(s.exact_scores for s in lista_stats)
+    empatados = [s for s in lista_stats if s.exact_scores == max_exatos]
+    
+    if max_exatos == 0:
+        return "Ninguém ainda", "0 exatos"
+    
+    if len(empatados) == 1:
+        return empatados[0].full_name, f"{max_exatos} exatos"
+    elif len(empatados) == 2:
+        return f"{empatados[0].full_name} e {empatados[1].full_name}", f"{max_exatos} exatos"
+    else:
+        return f"{empatados[0].full_name} (+{len(empatados) - 1})", f"{max_exatos} exatos"
+
+
+# Processa os textos considerando empates
+nome_lider, valor_lider = obter_lideres_formatados(stats)
+nome_exato, valor_exato = obter_reis_do_exato_formatados(stats)
+
 leader = metrics["leader"]
 best_phase = metrics["best_phase"]
 exact_king = metrics["exact_king"]
 hat_trick = metrics["hat_trick"]
-climb = metrics["biggest_climb"]
 zebra = metrics["zebra_king"]
+
+# Tratamento do climb
+climb_raw = metrics.get("biggest_climb")
+climb_user = None
+climb_delta = 0
+
+if isinstance(climb_raw, dict):
+    climb_user = climb_raw.get("user")
+    climb_delta = climb_raw.get("delta", 0)
+elif isinstance(climb_raw, (set, tuple)):
+    climb_list = list(climb_raw)
+    for item in climb_list:
+        if isinstance(item, str):
+            climb_user = item
+        elif isinstance(item, int) and not isinstance(item, bool):
+            climb_delta = item
 
 # Top row
 c1, c2, c3 = st.columns(3)
 
 with c1:
     st.markdown("### 👑 Líder Geral")
-    st.metric(
-        label=leader.full_name,
-        value=f"{leader.total_points} pts",
-        delta=f"{leader.exact_scores} placares exatos",
-    )
+    if leader:
+        st.metric(
+            label=nome_lider,
+            value=valor_lider,
+            delta=f"{leader.exact_scores} placares exatos" if leader.exact_scores > 0 else None,
+        )
+    else:
+        st.info("Nenhum dado computado.")
 
 with c2:
     st.markdown("### 🏅 Melhor da Fase")
@@ -49,15 +106,18 @@ with c2:
             delta=best_phase["phase"],
         )
     else:
-        st.info("Sem dados por fase.")
+        st.info("Nenhuma fase finalizada ainda.")
 
 with c3:
     st.markdown("### 🎯 Rei do Placar Exato")
-    st.metric(
-        label=exact_king.full_name,
-        value=f"{exact_king.exact_scores} exatos",
-        delta=f"{exact_king.total_points} pts totais",
-    )
+    if exact_king:
+        st.metric(
+            label=nome_exato,
+            value=valor_exato,
+            delta=f"{exact_king.total_points} pts totais" if exact_king.total_points > 0 else None,
+        )
+    else:
+        st.info("Nenhum placar exato computado.")
 
 st.divider()
 
@@ -79,10 +139,10 @@ with c4:
 with c5:
     st.markdown("### 📈 Maior Escalada")
     st.caption("Maior subida no ranking (snapshots)")
-    if climb["user"] and climb["delta"] > 0:
+    if climb_user and climb_delta > 0:
         st.metric(
-            label=climb["user"],
-            value=f"+{climb['delta']} posições",
+            label=climb_user,
+            value=f"+{climb_delta} posições",
         )
     else:
         st.info(
