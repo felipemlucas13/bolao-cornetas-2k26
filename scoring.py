@@ -41,7 +41,6 @@ def goal_diff(home: int, away: int) -> int:
 def calculate_match_points(
     pred_home: int, pred_away: int, result_home: int, result_away: int
 ) -> tuple[int, str]:
-    """Non-cumulative scoring: highest matching rule wins."""
     if pred_home == result_home and pred_away == result_away:
         return 8, "Placar exato"
 
@@ -53,96 +52,26 @@ def calculate_match_points(
             return 5, "Resultado + saldo"
         return 3, "Resultado correto"
 
-    return 0, "Errou"
+    return 0, "Erro"
 
 
 def classify_prediction(
     pred_home: int, pred_away: int, result_home: int, result_away: int
 ) -> dict:
-    points, label = calculate_match_points(
-        pred_home, pred_away, result_home, result_away
-    )
-    pred_res = match_result(pred_home, pred_away)
-    result_res = match_result(result_home, result_away)
+    pts, r_name = calculate_match_points(pred_home, pred_away, result_home, result_away)
     return {
-        "points": points,
-        "label": label,
-        "exact": points == 8,
-        "correct_result": pred_res == result_res and points > 0,
-        "correct_diff": points == 5,
+        "points": pts,
+        "rule_name": r_name,
+        "exact": pts == 8,
+        "correct_result": pts in [3, 5, 8],
+        "correct_diff": pts in [5, 8],
     }
 
 
 def _lottery_value(user_id: int, username: str) -> float:
-    seed = f"{user_id}:{username}:bolao-2k26"
-    digest = hashlib.sha256(seed.encode()).hexdigest()
-    return int(digest[:8], 16) / 0xFFFFFFFF
-
-
-def calculate_special_points(
-    champion: str | None,
-    vice: str | None,
-    top_scorer: str | None,
-    settings: dict | None,
-) -> tuple[int, int, int]:
-    if not settings:
-        return 0, 0, 0
-
-    pts_champion = 0
-    pts_vice = 0
-    pts_scorer = 0
-
-    if champion and settings.get("champion_team"):
-        if champion.strip().lower() == settings["champion_team"].strip().lower():
-            pts_champion = 10
-
-    if vice and settings.get("vice_team"):
-        if vice.strip().lower() == settings["vice_team"].strip().lower():
-            pts_vice = 5
-
-    if top_scorer and settings.get("top_scorers"):
-        scorers = [
-            s.strip().lower()
-            for s in settings["top_scorers"].split(",")
-            if s.strip()
-        ]
-        if top_scorer.strip().lower() in scorers:
-            pts_scorer = 5
-
-    return pts_champion, pts_vice, pts_scorer
-
-
-def recalculate_all_scores() -> dict:
-    """Recalculate game and special prediction points for all users."""
-    games = db.list_games()
-    finished = [g for g in games if g["finished"]]
-    settings = db.get_tournament_settings()
-
-    game_updates = 0
-    for game in finished:
-        preds = db.get_predictions_for_game(game["id"])
-        for pred in preds:
-            pts, _ = calculate_match_points(
-                pred["home_score"],
-                pred["away_score"],
-                game["home_score"],
-                game["away_score"],
-            )
-            db.update_prediction_points(pred["id"], pts)
-            game_updates += 1
-
-    special_updates = 0
-    for sp in db.get_all_special_predictions():
-        pc, pv, ps = calculate_special_points(
-            sp.get("champion"), sp.get("vice"), sp.get("top_scorer"), settings
-        )
-        db.update_special_points(sp["user_id"], pc, pv, ps)
-        special_updates += 1
-
-    return {
-        "game_predictions_updated": game_updates,
-        "special_predictions_updated": special_updates,
-    }
+    raw = f"FIFA2k26-{user_id}-{username}"
+    h = hashlib.sha256(raw.encode()).hexdigest()
+    return int(h[:8], 16) / 4294967295.0
 
 
 def build_user_stats() -> list[UserStats]:
@@ -150,9 +79,31 @@ def build_user_stats() -> list[UserStats]:
     settings = db.get_tournament_settings()
     stats: list[UserStats] = []
 
+    try:
+        res_all_preds = db.supabase.table("predictions").select("*").execute()
+        todos_palpites = res_all_preds.data if res_all_preds.data else []
+    except Exception:
+        todos_palpites = []
+
+    try:
+        res_all_sp = db.supabase.table("special_predictions").select("*").execute()
+        todos_especiais = res_all_sp.data if res_all_sp.data else []
+    except Exception:
+        todos_especiais = []
+
+    palpites_por_usuario = {}
+    for p in todos_palpites:
+        uid = p.get("user_id")
+        if uid not in palpites_por_usuario:
+            palpites_por_usuario[uid] = []
+        palpites_por_usuario[uid].append(p)
+
+    especiais_por_usuario = {sp.get("user_id"): sp for sp in todos_especiais}
+
     for user in all_users:
-        preds = db.get_user_predictions(user["id"])
-        finished_preds = [p for p in preds if p["finished"]]
+        uid = user["id"]
+        preds = palpites_por_usuario.get(uid, [])
+        finished_preds = [p for p in preds if p.get("finished")]
 
         game_points = 0
         exact_scores = 0
@@ -160,195 +111,100 @@ def build_user_stats() -> list[UserStats]:
         correct_diffs = 0
 
         for p in finished_preds:
-            
-            cls = classify_prediction(
-                p["home_score"],
-                p["away_score"],
-                p["result_home"],
-                p["result_away"],
-            )
-
+            cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
             game_points += cls["points"]
+            if cls["exact"]: exact_scores += 1
+            if cls["correct_result"]: correct_results += 1
+            if cls["correct_diff"]: correct_diffs += 1
 
-            if cls["exact"]:
-                exact_scores += 1
-            if cls["correct_result"]:
-                correct_results += 1
-            if cls["correct_diff"]:
-                correct_diffs += 1
-
-        sp = db.get_special_prediction(user["id"])
+        sp = especiais_por_usuario.get(uid)
         special_points = 0
         champion_hit = 0
         if sp:
-            special_points = (
-                sp.get("points_champion", 0)
-                + sp.get("points_vice", 0)
-                + sp.get("points_scorer", 0)
-            )
+            special_points = sp.get("points_champion", 0) + sp.get("points_vice", 0) + sp.get("points_scorer", 0)
             if settings and sp.get("champion") and settings.get("champion_team"):
-                if (
-                    sp["champion"].strip().lower()
-                    == settings["champion_team"].strip().lower()
-                ):
+                if sp["champion"].strip().lower() == settings["champion_team"].strip().lower():
                     champion_hit = 1
 
         stats.append(
             UserStats(
-                user_id=user["id"],
-                full_name=user["full_name"],
-                username=user["username"],
-                total_points=game_points + special_points,
-                game_points=game_points,
-                special_points=special_points,
-                exact_scores=exact_scores,
-                correct_results=correct_results,
-                correct_diffs=correct_diffs,
-                predictions_count=len(preds),
-                champion_hit=champion_hit,
-                tiebreak_lottery=_lottery_value(user["id"], user["username"]),
+                user_id=uid, full_name=user["full_name"], username=user["username"],
+                total_points=game_points + special_points, game_points=game_points,
+                special_points=special_points, exact_scores=exact_scores,
+                correct_results=correct_results, correct_diffs=correct_diffs,
+                predictions_count=len(preds), champion_hit=champion_hit,
+                tiebreak_lottery=_lottery_value(uid, user["username"]),
             )
         )
 
-    stats.sort(
-        key=lambda s: (
-            -s.total_points,
-            -s.exact_scores,
-            -s.correct_results,
-            -s.champion_hit,
-            -s.tiebreak_lottery,
-        )
-    )
+    stats.sort(key=lambda s: (-s.total_points, -s.exact_scores, -s.correct_results, -s.champion_hit, -s.tiebreak_lottery))
     return stats
 
 
 def ranking_dataframe() -> pd.DataFrame:
     stats = build_user_stats()
+    if not stats:
+        return pd.DataFrame()
+
     rows = []
-    for pos, s in enumerate(stats, start=1):
-        rows.append(
-            {
-                "Posição": pos,
-                "Participante": s.full_name,
-                "Usuário": s.username,
-                "Pontos Totais": s.total_points,
-                "Pontos Jogos": s.game_points,
-                "Pontos Especiais": s.special_points,
-                "Placares Exatos": s.exact_scores,
-                "Resultados Corretos": s.correct_results,
-                "Palpites Enviados": s.predictions_count,
-                "Acertou Campeão": "Sim" if s.champion_hit else "Não",
-            }
-        )
+    for i, s in enumerate(stats):
+        rows.append({
+            "Posição": i + 1, "Participante": s.full_name, "Usuário": s.username,
+            "Pontos Totais": s.total_points, "Placares Exatos": s.exact_scores,
+            "Resultados Corretos": s.correct_results, "Palpites Feitos": s.predictions_count
+        })
     return pd.DataFrame(rows)
 
 
-def save_current_ranking_snapshot():
-    stats = build_user_stats()
-    for pos, s in enumerate(stats, start=1):
-        db.save_ranking_snapshot(s.user_id, s.total_points, pos)
-
-
 def phase_ranking(phase_id: int) -> pd.DataFrame:
-    phase = db.get_phase(phase_id)
-    if not phase:
-        return pd.DataFrame()
+    all_users = [u for u in db.list_participants() if u["active"]]
+    all_preds = db.get_all_predictions(phase_id)
 
-    participants = [u for u in db.list_participants() if u["active"]]
+    preds_by_user = {}
+    for p in all_preds:
+        uid = p.get("user_id")
+        if uid not in preds_by_user:
+            preds_by_user[uid] = []
+        preds_by_user[uid].append(p)
+
     rows = []
-
-    for user in participants:
-        preds = db.get_user_predictions(user["id"], phase_id)
-        finished = [p for p in preds if p["finished"]]
-        pts = sum(p["points"] for p in finished)
-        exact = sum(
-            1
-            for p in finished
-            if classify_prediction(
-                p["home_score"], p["away_score"], p["result_home"], p["result_away"]
-            )["exact"]
-        )
-        rows.append(
-            {
-                "Participante": user["full_name"],
-                "Pontos": pts,
-                "Placares Exatos": exact,
-                "Palpites": len(preds),
-            }
-        )
+    for u in all_users:
+        uid = u["id"]
+        preds = preds_by_user.get(uid, [])
+        pts = 0
+        exacts = 0
+        for p in preds:
+            if p.get("finished"):
+                cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
+                pts += cls["points"]
+                if cls["exact"]: exacts += 1
+        
+        rows.append({
+            "Participante": u["full_name"], "Usuário": u["username"],
+            "Pontos": pts, "Placares Exatos": exacts, "lottery": _lottery_value(uid, u["username"])
+        })
 
     df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    return df.sort_values(["Pontos", "Placares Exatos"], ascending=False).reset_index(
-        drop=True
-    )
-
-
-def user_statistics(user_id: int) -> dict:
-    preds = db.get_user_predictions(user_id)
-    finished = [p for p in preds if p["finished"]]
-    sp = db.get_special_prediction(user_id)
-
-    by_phase: dict[str, dict] = {}
-    for p in preds:
-        phase = p["phase_name"]
-        if phase not in by_phase:
-            by_phase[phase] = {
-                "palpites": 0,
-                "pontos": 0,
-                "exatos": 0,
-                "corretos": 0,
-            }
-        by_phase[phase]["palpites"] += 1
-        if p["finished"]:
-            by_phase[phase]["pontos"] += p["points"]
-            cls = classify_prediction(
-                p["home_score"], p["away_score"], p["result_home"], p["result_away"]
-            )
-            if cls["exact"]:
-                by_phase[phase]["exatos"] += 1
-            if cls["correct_result"]:
-                by_phase[phase]["corretos"] += 1
-
-    total_pts = sum(p["points"] for p in finished)
-    if sp:
-        total_pts += (
-            sp.get("points_champion", 0)
-            + sp.get("points_vice", 0)
-            + sp.get("points_scorer", 0)
-        )
-
-    return {
-        "total_predictions": len(preds),
-        "finished_predictions": len(finished),
-        "total_points": total_pts,
-        "exact_scores": sum(
-            1
-            for p in finished
-            if classify_prediction(
-                p["home_score"], p["away_score"], p["result_home"], p["result_away"]
-            )["exact"]
-        ),
-        "correct_results": sum(
-            1
-            for p in finished
-            if classify_prediction(
-                p["home_score"], p["away_score"], p["result_home"], p["result_away"]
-            )["correct_result"]
-        ),
-        "by_phase": by_phase,
-        "special": sp,
-    }
+    if not df.empty:
+        df = df.sort_values(by=["Pontos", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
+    return df
 
 
 def dashboard_metrics() -> dict:
     stats = build_user_stats()
     if not stats:
-        return {}
+        return {
+            "leaders": [], "max_points": 0, "max_exact_leader": 0,
+            "best_phase": {"phase": None, "user": None, "points": -1},
+            "exact_kings": [], "max_exact": 0, "hat_tricks": [], "max_hat_tricks": 0, "max_streak": 0,
+            "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
+        }
 
-    leader = stats[0]
+    # 1. Líderes (Garante lista completa de empatados)
+    max_pts = max(s.total_points for s in stats) if stats else 0
+    leaders = [s for s in stats if s.total_points == max_pts]
 
+    # 2. Melhor da fase
     phases = db.list_phases()
     best_phase = None
     best_phase_user = None
@@ -362,64 +218,49 @@ def dashboard_metrics() -> dict:
                 best_phase_user = top["Participante"]
                 best_phase = phase["name"]
 
-    exact_king = max(stats, key=lambda s: (s.exact_scores, s.total_points))
+    # 3. Reis do Exato
+    max_exatos = max(s.exact_scores for s in stats) if stats else 0
+    exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    hat_trick_user = _find_hat_trick_winner()
+    # 4. Trazemos todos os palpites na memória para calcular Hat-Tricks e Zebras sem acessar a rede em loops
+    try:
+        res_all_preds = db.supabase.table("predictions").select("*").execute()
+        todos_palpites = res_all_preds.data if res_all_preds.data else []
+    except Exception:
+        todos_palpites = []
 
+    palpites_por_usuario = {}
+    for p in todos_palpites:
+        uid = p.get("user_id")
+        if uid not in palpites_por_usuario:
+            palpites_por_usuario[uid] = []
+        palpites_por_usuario[uid].append(p)
+
+    # 5. Hat-Tricks em memória
+    hat_tricks = _find_hat_trick_winners_mem(palpites_por_usuario)
+
+    # 6. Maior Escalada
     climb_user, climb_delta = _find_biggest_climb(stats)
 
-    zebra_king = _find_zebra_king()
+    # 7. Rei das Zebras em memória
+    zebra_kings, max_zebra_pts = _find_zebra_kings_mem(palpites_por_usuario)
 
     return {
-        "leader": leader,
+        "leaders": [l.full_name for l in leaders], "max_points": max_pts, "max_exact_leader": leaders[0].exact_scores if leaders else 0,
         "best_phase": {"phase": best_phase, "user": best_phase_user, "points": best_phase_pts},
-        "exact_king": exact_king,
-        "hat_trick": hat_trick_user,
+        "exact_kings": [e.full_name for e in exact_kings], "max_exact": max_exatos,
+        "hat_tricks": hat_tricks.get("users", []), "max_hat_tricks": hat_tricks.get("count", 0), "max_streak": hat_tricks.get("streak", 0),
         "biggest_climb": {"user": climb_user, "delta": climb_delta},
-        "zebra_king": zebra_king,
+        "zebra_kings": zebra_kings, "max_zebra_pts": max_zebra_pts
     }
 
 
-def _find_hat_trick_winner() -> dict | None:
-    """Participant with most sequences of 3+ exact scores in a row."""
-    participants = [u for u in db.list_participants() if u["active"]]
-    best = None
-    best_count = 0
-
-    for user in participants:
-        preds = db.get_user_predictions(user["id"])
-        finished = sorted(
-            [p for p in preds if p["finished"]],
-            key=lambda x: (x.get("game_datetime") or "", x["game_id"]),
-        )
-        streak = 0
-        max_streak = 0
-        hat_tricks = 0
-        for p in finished:
-            cls = classify_prediction(
-                p["home_score"], p["away_score"], p["result_home"], p["result_away"]
-            )
-            if cls["exact"]:
-                streak += 1
-                if streak >= 3:
-                    hat_tricks += 1
-            else:
-                streak = 0
-            max_streak = max(max_streak, streak)
-
-        if hat_tricks > best_count or (hat_tricks == best_count and max_streak > (best or {}).get("max_streak", 0)):
-            best_count = hat_tricks
-            best = {
-                "full_name": user["full_name"],
-                "hat_tricks": hat_tricks,
-                "max_streak": max_streak,
-            }
-
-    return best
-
-
 def _find_biggest_climb(current_stats: list[UserStats]) -> tuple[str | None, int]:
-    earliest = {s["user_id"]: s for s in db.get_earliest_snapshots()}
+    try:
+        earliest = {s["user_id"]: s for s in db.get_earliest_snapshots()}
+    except Exception:
+        return None, 0
+        
     if not earliest:
         return None, 0
 
@@ -440,46 +281,64 @@ def _find_biggest_climb(current_stats: list[UserStats]) -> tuple[str | None, int
     return best_user, best_delta
 
 
-def _find_zebra_king() -> dict | None:
-    """Most points from underdog wins (away team or draw predicted correctly when favorite lost)."""
+def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
     participants = [u for u in db.list_participants() if u["active"]]
-    best = None
-    best_zebra_pts = -1
+    max_h = 0
+    max_s = 0
+    user_streaks = []
 
     for user in participants:
-        preds = db.get_user_predictions(user["id"])
-        zebra_pts = 0
-        zebra_count = 0
+        preds = palpites_por_usuario.get(user["id"], [])
+        finished = sorted([p for p in preds if p.get("finished")], key=lambda x: (x.get("game_datetime") or "", x.get("game_id", 0)))
+        streak = 0
+        m_streak = 0
+        h_tricks = 0
+        for p in finished:
+            cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
+            if cls["exact"]:
+                streak += 1
+                if streak >= 3: h_tricks += 1
+            else:
+                streak = 0
+            m_streak = max(m_streak, streak)
+        
+        if h_tricks > 0:
+            user_streaks.append({"name": user["full_name"], "count": h_tricks, "streak": m_streak})
+            if h_tricks > max_h: max_h = h_tricks
+
+    winners = [u["name"] for u in user_streaks if u["count"] == max_h] if max_h > 0 else []
+    if winners:
+        max_s = max(u["streak"] for u in user_streaks if u["count"] == max_h)
+
+    return {"users": winners, "count": max_h, "streak": max_s}
+
+
+def _find_zebra_kings_mem(palpites_por_usuario: dict) -> tuple[list[str], int]:
+    participants = [u for u in db.list_participants() if u["active"]]
+    max_z_pts = 0
+    user_zebras = []
+
+    for user in participants:
+        preds = palpites_por_usuario.get(user["id"], [])
+        z_pts = 0
         for p in preds:
-            if not p["finished"]:
-                continue
+            if not p.get("finished"): continue
             rh, ra = p["result_home"], p["result_away"]
             ph, pa = p["home_score"], p["away_score"]
             actual = match_result(rh, ra)
             predicted = match_result(ph, pa)
 
             is_zebra = False
-            if actual == -1 and rh > ra + 1:
-                is_zebra = True
-            elif actual == 0 and abs(rh - ra) >= 2:
-                is_zebra = True
-            elif actual == 1 and ra > rh + 1:
-                is_zebra = True
+            if actual == -1 and rh > ra + 1: is_zebra = True
+            elif actual == 0 and abs(rh - ra) >= 2: is_zebra = True
+            elif actual == 1 and ra > rh + 1: is_zebra = True
 
-            if is_zebra and predicted == actual and p["points"] > 0:
-                zebra_pts += p["points"]
-                zebra_count += 1
+            if is_zebra and predicted == actual and p.get("points", 0) > 0:
+                z_pts += p["points"]
 
-        if zebra_pts > best_zebra_pts:
-            best_zebra_pts = zebra_pts
-            best = {
-                "full_name": user["full_name"],
-                "zebra_points": zebra_pts,
-                "zebra_count": zebra_count,
-            }
+        if z_pts > 0:
+            user_zebras.append({"name": user["full_name"], "pts": z_pts})
+            if z_pts > max_z_pts: max_z_pts = z_pts
 
-    return best
-
-
-def can_view_all_predictions(phase_status: str) -> bool:
-    return phase_status in ("Fechada", "Finalizada")
+    winners = [u["name"] for u in user_zebras if u["pts"] == max_z_pts] if max_z_pts > 0 else []
+    return winners, max_z_pts
