@@ -94,7 +94,6 @@ def gerar_pdf_palpites(my_preds: list, full_name: str) -> bytes:
     
     buffer.seek(0)
     return buffer.getvalue()
-# --------------------------------------------------------
 
 st.set_page_config(page_title="Meus Palpites — Bolão 2k26", layout="wide")
 
@@ -125,8 +124,6 @@ with tab_games:
         for phase in open_phases:
             st.subheader(f"📋 {phase['name']} — Aberta")
             games = db.list_games(phase["id"])
-            #adicionado tirar depois
-            st.write("Quantidade de jogos retornados:", len(games))
             if not games:
                 st.caption("Nenhum jogo nesta fase.")
                 continue
@@ -170,17 +167,14 @@ with tab_games:
                         ),
                     )
 
-                # 1. Garante que a variável de controle existe no st.session_state
                 if f"salvando_{phase['id']}" not in st.session_state:
                     st.session_state[f"salvando_{phase['id']}"] = False
 
-                # 2. Passamos o parâmetro disabled se o botão já tiver sido clicado uma vez
                 if st.form_submit_button(
                     f"Salvar palpites — {phase['name']}", 
                     type="primary", 
                     disabled=st.session_state[f"salvando_{phase['id']}"]
                 ):
-                    # 3. Ativa a trava imediatamente para cliques repetidos baterem no botão desabilitado
                     st.session_state[f"salvando_{phase['id']}"] = True
                     
                     try:
@@ -194,7 +188,6 @@ with tab_games:
                         st.error(f"Ocorreu um erro ao salvar: {e}")
                         
                     finally:
-                        # 4. Desativa a trava após terminar de processar o banco e recarrega a página liso
                         st.session_state[f"salvando_{phase['id']}"] = False
                         st.rerun()
 
@@ -228,9 +221,8 @@ with tab_games:
                     "Atualizado": formatar_data_hora(p["updated_at"]),
                 }
             )
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         
-        # --- O BOTÃO DO PDF ENTRA AQUI LOGO ABAIXO DA SUA TABELA ---
         pdf_data = gerar_pdf_palpites(my_preds, user["full_name"])
         st.download_button(
             label="📥 Exportar Palpites em PDF",
@@ -243,7 +235,6 @@ with tab_games:
         st.info("Você ainda não enviou palpites.")
 
 # --- Special predictions ---
-# --- Special predictions ---
 with tab_special:
     st.subheader("Campeão, Vice e Artilheiro")
     st.markdown(
@@ -253,13 +244,10 @@ with tab_special:
 
     sp = db.get_special_prediction(user_id)
 
-    # 1. TRAVA DE DATA: Defina o dia e hora de início do primeiro jogo da Copa
-    # Exemplo: 11 de Junho de 2026 às 16:00 (mude o horário se o jogo for outra hora)
     from datetime import datetime
-    data_limite = datetime(2026, 6, 11, 20, 0, 0)
+    data_limite = datetime(2026, 6, 12, 20, 0, 0)
     agora = datetime.now()
 
-    # 2. SE JÁ PASSOU DA HORA: Mostra os dados travados (Apenas Leitura)
     if agora > data_limite:
         st.warning("🔒 Os palpites especiais estão trancados porque a Copa já começou!")
         
@@ -272,10 +260,8 @@ with tab_special:
             with c3:
                 st.text_input("Artilheiro", value=sp["top_scorer"] if sp and sp.get("top_scorer") else "", disabled=True)
             
-            # Botão falso/desabilitado apenas para manter o design do form sem permitir salvar
             st.form_submit_button("Prazo encerrado", disabled=True)
 
-    # 3. SE AINDA NÃO PASSOU DA HORA: Seu formulário original funciona normal
     else:
         with st.form("special_preds"):
             c1, c2, c3 = st.columns(3)
@@ -299,7 +285,6 @@ with tab_special:
                 st.success("Palpites especiais salvos (versão registrada no histórico).")
                 st.rerun()
 
-    # O cálculo dos pontos continua aqui embaixo, visível em ambos os casos
     if sp:
         settings = db.get_tournament_settings()
         pc, pv, ps = scoring.calculate_special_points(
@@ -336,7 +321,7 @@ with tab_stats:
                     "Corretos": data["corretos"],
                 }
             )
-        st.dataframe(pd.DataFrame(phase_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(phase_rows), width="stretch", hide_index=True)
 
 # --- Audit ---
 with tab_audit:
@@ -357,7 +342,7 @@ with tab_audit:
         if game_filter != "Todos":
             df_h = df_h[df_h["Jogo ID"] == game_filter]
 
-        st.dataframe(df_h.drop(columns=["Jogo ID"]), use_container_width=True, hide_index=True)
+        st.dataframe(df_h.drop(columns=["Jogo ID"]), width="stretch", hide_index=True)
     else:
         st.info("Nenhum histórico disponível.")
 
@@ -366,7 +351,7 @@ with tab_audit:
         st.subheader("Histórico — palpites especiais")
         st.dataframe(
             pd.DataFrame(sp_hist)[["version", "champion", "vice", "top_scorer", "saved_at"]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -405,7 +390,8 @@ with tab_all:
                         "Pontos": p["points"] if p["finished"] else "-",
                     }
                 )
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            # FIX DA LINHA 412: Trocado 'phase_rows' por 'rows' para carregar a tabela correta
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         else:
             st.info("Nenhum palpite registrado nesta fase.")
 
@@ -421,4 +407,4 @@ with tab_all:
                 "Participante", "Campeão", "Vice", "Artilheiro",
                 "Pts Campeão", "Pts Vice", "Pts Artilheiro",
             ]
-            st.dataframe(df_sp, use_container_width=True, hide_index=True)
+            st.dataframe(df_sp, width="stretch", hide_index=True)
