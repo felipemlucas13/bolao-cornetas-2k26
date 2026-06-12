@@ -22,7 +22,7 @@ if not metrics:
     st.info("Dashboard disponível após cadastro de participantes e palpites.")
     st.stop()
 
-# Puxamos a lista completa e real de estatísticas de todos os usuários para calcular os empates
+# Puxamos a lista de estatísticas recalculada para encontrar TODOS os empatados
 stats = scoring.build_user_stats()
 
 # --- FUNÇÃO GENÉRICA PARA FORMATAR OS NOMES EMPATADOS ---
@@ -33,7 +33,7 @@ def formatar_nomes_empatados(lista_nomes: list[str]) -> str:
         return lista_nomes[0]
     if len(lista_nomes) == 2:
         return f"{lista_nomes[0]} e {lista_nomes[1]}"
-    # Para 3 ou mais, mostra o primeiro e a quantidade de empatados restantes
+    # Mostra o primeiro da lista e quantos mais estão empatados com ele
     return f"{lista_nomes[0]} (+{len(lista_nomes) - 1})"
 
 
@@ -42,10 +42,10 @@ nomes_lideres = []
 max_pts = stats[0].total_points if stats else 0
 max_exatos_lider = stats[0].exact_scores if stats else 0
 
-for s in stats:
-    # No seu critério, o empate no topo exige pontos E exatos iguais
-    if s.total_points == max_pts and s.exact_scores == max_exatos_lider:
-        nomes_lideres.append(s.full_name)
+if stats:
+    for s in stats:
+        if s.total_points == max_pts and s.exact_scores == max_exatos_lider:
+            nomes_lideres.append(s.full_name)
 label_lider = formatar_nomes_empatados(nomes_lideres)
 
 
@@ -61,12 +61,10 @@ valor_exato = f"{max_exatos} exatos" if max_exatos > 0 else "0 exatos"
 
 
 # --- 3. LÓGICA DE EMPATE: HAT-TRICK ---
-# Varremos todos para ver se mais alguém igualou o recorde de hat-tricks
 nomes_hat_trick = []
 max_hat_tricks = 0
 max_streak = 0
 
-# Primeiro descobrimos o topo real do hat-trick vasculhando os usuários ativos
 participantes = [u for u in db.list_participants() if u["active"]]
 dados_hat_trick = []
 
@@ -92,7 +90,6 @@ for user in participantes:
             max_hat_tricks = h_tricks
 
 if max_hat_tricks > 0:
-    # Filtra todos que alcançaram a quantidade máxima de hat-tricks
     for d in dados_hat_trick:
         if d["count"] == max_hat_tricks:
             nomes_hat_trick.append(d["name"])
@@ -160,14 +157,14 @@ elif isinstance(climb_raw, (set, tuple)):
 
 best_phase = metrics["best_phase"]
 
-# --- RENDERIZAÇÃO DOS CARDS NO STREAMLIT ---
+# --- RENDERIZAÇÃO CORRIGIDA DOS CARDS NO STREAMLIT ---
 # Linha Superior
 c1, c2, c3 = st.columns(3)
 
 with c1:
     st.markdown("### 👑 Líder Geral")
     st.metric(
-        label=label_lider,
+        label=label_lider,  # CORRIGIDO: Agora usa a string contendo os empates!
         value=f"{max_pts} pts",
         delta=f"{max_exatos_lider} exatos" if max_exatos_lider > 0 else None,
     )
@@ -186,7 +183,7 @@ with c2:
 with c3:
     st.markdown("### 🎯 Rei do Placar Exato")
     st.metric(
-        label=label_exato,
+        label=label_exato,  # CORRIGIDO: Agora usa a string com todos os reis do exato!
         value=valor_exato,
         delta=f"{max_pts} pts totais" if max_exatos > 0 else None,
     )
@@ -201,7 +198,7 @@ with c4:
     st.caption("Mais sequências de 3+ placares exatos consecutivos")
     if max_hat_tricks > 0:
         st.metric(
-            label=label_hat_trick,
+            label=label_hat_trick,  # CORRIGIDO
             value=f"{max_hat_tricks} hat-tricks",
             delta=f"Maior sequência: {max_streak}",
         )
@@ -223,10 +220,9 @@ with c6:
     st.markdown("### 🦓 Rei das Zebras")
     st.caption("Mais pontos em acertos de resultados surpresa")
     if max_zebra_pts > 0:
-        # Encontra o count correspondente ao líder das zebras para o delta do card
         total_zebras = next((d["count"] for d in dados_zebra if d["pts"] == max_zebra_pts), 0)
         st.metric(
-            label=label_zebra,
+            label=label_zebra,  # CORRIGIDO
             value=f"{max_zebra_pts} pts",
             delta=f"{total_zebras} zebras",
         )
