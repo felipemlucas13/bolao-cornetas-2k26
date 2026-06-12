@@ -25,11 +25,11 @@ if not metrics:
 def formatar_nomes(lista_nomes: list[str]) -> str:
     if not lista_nomes:
         return "Ninguém ainda"
-    if len(lista_nomes) == 1:
-        return lista_nomes[0]
-    if len(lista_nomes) == 2:
-        return f"{lista_nomes[0]} e {lista_nomes[1]}"
-    return f"{lista_nomes[0]} (+{len(lista_nomes) - 1})"
+
+    if len(lista_nomes) <= 3:
+        return ", ".join(lista_nomes)
+
+    return f"{lista_nomes[0]} (+{len(lista_nomes)-1})"
 
 
 # Recupera as informações processadas com empates reais
@@ -40,6 +40,10 @@ label_zebra = formatar_nomes(metrics["zebra_kings"])
 
 best_phase = metrics["best_phase"]
 climb = metrics["biggest_climb"]
+
+label_best_phase = formatar_nomes(
+    best_phase.get("users", [])
+)
 
 # --- LINHA SUPERIOR ---
 c1, c2, c3 = st.columns(3)
@@ -56,8 +60,9 @@ with c2:
     st.markdown("### 🏅 Melhor da Fase")
     if best_phase["phase"]:
         st.metric(
-            label=best_phase["user"] or "-",
-            value=f"{best_phase['points']} pts" if best_phase["points"] >= 0 else "-",
+            label=label_best_phase,
+            value=f"{best_phase['points']} pts"
+            if best_phase["points"] >= 0 else "-",
             delta=best_phase["phase"],
         )
     else:
