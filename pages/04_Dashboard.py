@@ -3,8 +3,6 @@
 import streamlit as st
 import database as db
 import scoring
-#forcando commit
-#forcando commit2
 
 st.set_page_config(page_title="Dashboard — Bolão 2k26", layout="wide")
 
@@ -23,7 +21,8 @@ if not metrics:
     st.info("Dashboard disponível após cadastro de participantes e palpites.")
     st.stop()
 
-# --- FUNÇÃO FORMATADORA DE EMPATES ---
+
+# --- FUNÇÃO FORMATADORA DE EMPATES CORRIGIDA ---
 def formatar_nomes(lista_nomes: list[str]) -> str:
     if not lista_nomes:
         return "Ninguém ainda"
@@ -31,7 +30,8 @@ def formatar_nomes(lista_nomes: list[str]) -> str:
         return lista_nomes[0]
     if len(lista_nomes) == 2:
         return f"{lista_nomes[0]} e {lista_nomes[1]}"
-    return f"{lista_nomes[0]} (+{len(lista_nomes) - 1})"
+    # Se tiver 3 ou mais, lista por vírgula para não esconder ninguém
+    return ", ".join(lista_nomes)
 
 
 # Recupera as informações processadas com empates reais
