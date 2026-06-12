@@ -3,6 +3,7 @@
 import streamlit as st
 import database as db
 import scoring
+#forcando commit
 
 st.set_page_config(page_title="Dashboard — Bolão 2k26", layout="wide")
 
