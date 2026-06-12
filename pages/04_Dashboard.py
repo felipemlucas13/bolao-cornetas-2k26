@@ -32,14 +32,14 @@ def formatar_nomes(lista_nomes: list[str]) -> str:
     return f"{lista_nomes[0]} (+{len(lista_nomes) - 1})"
 
 
-# Recupera as informações estruturadas com empates reais
-label_lider = formatar_nomes(metrics.get("leaders", []))
-label_exato = formatar_nomes(metrics.get("exact_kings", []))
-label_hat_trick = formatar_nomes(metrics.get("hat_tricks", []))
-label_zebra = formatar_nomes(metrics.get("zebra_kings", []))
+# Recupera as informações processadas com empates reais
+label_lider = formatar_nomes(metrics["leaders"])
+label_exato = formatar_nomes(metrics["exact_kings"])
+label_hat_trick = formatar_nomes(metrics["hat_tricks"])
+label_zebra = formatar_nomes(metrics["zebra_kings"])
 
-best_phase = metrics.get("best_phase", {"phase": None, "user": None, "points": -1})
-climb = metrics.get("biggest_climb", {"user": None, "delta": 0})
+best_phase = metrics["best_phase"]
+climb = metrics["biggest_climb"]
 
 # --- LINHA SUPERIOR ---
 c1, c2, c3 = st.columns(3)
@@ -48,13 +48,13 @@ with c1:
     st.markdown("### 👑 Líder Geral")
     st.metric(
         label=label_lider,
-        value=f"{metrics.get('max_points', 0)} pts",
-        delta=f"{metrics.get('max_exact_leader', 0)} exatos" if metrics.get('max_exact_leader', 0) > 0 else None,
+        value=f"{metrics['max_points']} pts",
+        delta=f"{metrics['max_exact_leader']} exatos" if metrics['max_exact_leader'] > 0 else None,
     )
 
 with c2:
     st.markdown("### 🏅 Melhor da Fase")
-    if best_phase and best_phase.get("phase"):
+    if best_phase["phase"]:
         st.metric(
             label=best_phase["user"] or "-",
             value=f"{best_phase['points']} pts" if best_phase["points"] >= 0 else "-",
@@ -67,7 +67,7 @@ with c3:
     st.markdown("### 🎯 Rei do Placar Exato")
     st.metric(
         label=label_exato,
-        value=f"{metrics.get('max_exact', 0)} exatos" if metrics.get('max_exact', 0) > 0 else "0 exatos",
+        value=f"{metrics['max_exact']} exatos" if metrics['max_exact'] > 0 else "0 exatos",
     )
 
 st.divider()
@@ -78,11 +78,11 @@ c4, c5, c6 = st.columns(3)
 with c4:
     st.markdown("### ⚡ Hat-Trick")
     st.caption("Mais sequências de 3+ placares exatos consecutivos")
-    if metrics.get("max_hat_tricks", 0) > 0:
+    if metrics["max_hat_tricks"] > 0:
         st.metric(
             label=label_hat_trick,
             value=f"{metrics['max_hat_tricks']} hat-tricks",
-            delta=f"Maior sequência: {metrics.get('max_streak', 0)}",
+            delta=f"Maior sequência: {metrics['max_streak']}",
         )
     else:
         st.info("Nenhum hat-trick registrado ainda.")
@@ -90,7 +90,7 @@ with c4:
 with c5:
     st.markdown("### 📈 Maior Escalada")
     st.caption("Maior subida no ranking (snapshots)")
-    if climb and climb.get("user") and climb.get("delta", 0) > 0:
+    if climb["user"] and climb["delta"] > 0:
         st.metric(
             label=climb["user"],
             value=f"+{climb['delta']} posições",
@@ -101,7 +101,7 @@ with c5:
 with c6:
     st.markdown("### 🦓 Rei das Zebras")
     st.caption("Mais pontos em acertos de resultados surpresa")
-    if metrics.get("max_zebra_pts", 0) > 0:
+    if metrics["max_zebra_pts"] > 0:
         st.metric(
             label=label_zebra,
             value=f"{metrics['max_zebra_pts']} pts",
