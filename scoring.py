@@ -75,9 +75,17 @@ def _lottery_value(user_id: int, username: str) -> float:
 
 
 def build_user_stats() -> list[UserStats]:
-    all_users = [u for u in db.list_participants() if u["active"]]
-    settings = db.get_tournament_settings()
-    stats: list[UserStats] = []
+    try:
+        all_users = [u for u in db.list_participants() if u["active"]]
+    except Exception:
+        all_users = []
+
+    try:
+        settings = db.get_tournament_settings()
+    except Exception:
+        settings = None
+
+    stats_list: list[UserStats] = []
 
     for user in all_users:
         uid = user["id"]
@@ -111,24 +119,30 @@ def build_user_stats() -> list[UserStats]:
         special_points = 0
         champion_hit = 0
         if sp:
-            special_points = sp.get("points_champion", 0) + sp.get("points_vice", 0) + sp.get("points_scorer", 0)
+            special_points = int(sp.get("points_champion", 0) + sp.get("points_vice", 0) + sp.get("points_scorer", 0))
             if settings and sp.get("champion") and settings.get("champion_team"):
-                if sp["champion"].strip().lower() == settings["champion_team"].strip().lower():
+                if str(sp["champion"]).strip().lower() == str(settings["champion_team"]).strip().lower():
                     champion_hit = 1
 
-        stats.append(
+        stats_list.append(
             UserStats(
-                user_id=uid, full_name=user["full_name"], username=user["username"],
-                total_points=game_points + special_points, game_points=game_points,
-                special_points=special_points, exact_scores=exact_scores,
-                correct_results=correct_results, correct_diffs=correct_diffs,
-                predictions_count=len(preds), champion_hit=champion_hit,
+                user_id=uid, 
+                full_name=user["full_name"], 
+                username=user["username"],
+                total_points=game_points + special_points, 
+                game_points=game_points,
+                special_points=special_points, 
+                exact_scores=exact_scores,
+                correct_results=correct_results, 
+                correct_diffs=correct_diffs,
+                predictions_count=len(preds), 
+                champion_hit=champion_hit,
                 tiebreak_lottery=_lottery_value(uid, user["username"]),
             )
         )
 
-    stats.sort(key=lambda s: (-s.total_points, -s.exact_scores, -s.correct_results, -s.champion_hit, -s.tiebreak_lottery))
-    return stats
+    stats_list.sort(key=lambda s: (-s.total_points, -s.exact_scores, -s.correct_results, -s.champion_hit, -s.tiebreak_lottery))
+    return stats_list
 
 
 def ranking_dataframe() -> pd.DataFrame:
@@ -147,8 +161,11 @@ def ranking_dataframe() -> pd.DataFrame:
 
 
 def phase_ranking(phase_id: int) -> pd.DataFrame:
-    all_users = [u for u in db.list_participants() if u["active"]]
-    all_preds = db.get_all_predictions(phase_id)
+    try:
+        all_users = [u for u in db.list_participants() if u["active"]]
+        all_preds = db.get_all_predictions(phase_id)
+    except Exception:
+        return pd.DataFrame()
 
     preds_by_user = {}
     for p in all_preds:
@@ -184,9 +201,10 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
         df = df.sort_values(by=["Pontos", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
     return df
 
+
 def dashboard_metrics() -> dict:
-    stats = build_user_stats()
-    if not stats:
+    stats_data = build_user_stats()
+    if not stats_data:
         return {
             "leaders": [], "max_points": 0, "max_exact_leader": 0,
             "best_phase": {"phase": None, "user": None, "points": -1},
@@ -194,16 +212,15 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Líderes Gerais
-    max_pts = max(s.total_points for s in stats)
-    leaders_list = [s.full_name for s in stats if s.total_points == max_pts]
-    max_exact_leader_val = stats[0].exact_scores if stats else 0
+    # 1. Extração segura de líderes gerais
+    max_pts = max(s.total_points for s in stats_data)
+    leaders_list = [s.full_name for s in stats_data if s.total_points == max_pts]
+    max_exact_leader_val = stats_data[0].exact_scores
 
-    # 2. Melhor da Fase
+    # 2. Melhor da fase
     best_phase_name = None
     best_phase_user_name = None
     best_phase_points_val = -1
-    
     try:
         for phase in db.list_phases():
             df = phase_ranking(phase["id"])
@@ -216,29 +233,30 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # 3. Reis do Exato
-    max_exatos = max(s.exact_scores for s in stats)
-    exact_kings_list = [s.full_name for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
+    # 3. Reis do Exato reais
+    max_exatos = max(s.exact_scores for s in stats_data)
+    exact_kings_list = [s.full_name for s in stats_data if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # 4. Cache para funções em lote
+    # Cache local em memória
     user_palpites = {}
-    for s in stats:
+    for s in stats_data:
         try:
             user_palpites[s.user_id] = db.get_user_predictions(s.user_id)
         except Exception:
             user_palpites[s.user_id] = []
 
+    # 4. Estatísticas de sequências e zebras
     hat_tricks_res = _find_hat_trick_winners_mem(user_palpites)
     zebra_kings_list, max_zebra_pts_val = _find_zebra_kings_mem(user_palpites)
 
-    # 5. Escalada do Ranking (Calculada de forma ultra-segura)
+    # 5. Escalada de posições
     climb_user_name = None
     climb_delta_val = 0
     try:
         earliest_snaps = db.get_earliest_snapshots()
         if earliest_snaps:
             earliest = {item["user_id"]: item for item in earliest_snaps}
-            for idx, s in enumerate(stats):
+            for idx, s in enumerate(stats_data):
                 if s.user_id in earliest:
                     delta = earliest[s.user_id]["position"] - (idx + 1)
                     if delta > climb_delta_val:
@@ -247,33 +265,28 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # Retorno estruturado sem lógicas internas
     return {
         "leaders": leaders_list,
         "max_points": max_pts,
         "max_exact_leader": max_exact_leader_val,
-        "best_phase": {
-            "phase": best_phase_name,
-            "user": best_phase_user_name,
-            "points": best_phase_points_val
-        },
+        "best_phase": {"phase": best_phase_name, "user": best_phase_user_name, "points": best_phase_points_val},
         "exact_kings": exact_kings_list,
         "max_exact": max_exatos,
         "hat_tricks": hat_tricks_res.get("users", []),
         "max_hat_tricks": hat_tricks_res.get("count", 0),
         "max_streak": hat_tricks_res.get("streak", 0),
-        "biggest_climb": {
-            "user": climb_user_name,
-            "delta": climb_delta_val
-        },
+        "biggest_climb": {"user": climb_user_name, "delta": climb_delta_val},
         "zebra_kings": zebra_kings_list,
         "max_zebra_pts": max_zebra_pts_val
     }
 
 
-
 def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
-    participants = [u for u in db.list_participants() if u["active"]]
+    try:
+        participants = [u for u in db.list_participants() if u["active"]]
+    except Exception:
+        return {"users": [], "count": 0, "streak": 0}
+
     max_h = 0
     max_s = 0
     user_streaks = []
@@ -307,7 +320,11 @@ def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
 
 
 def _find_zebra_kings_mem(palpites_por_usuario: dict) -> tuple[list[str], int]:
-    participants = [u for u in db.list_participants() if u["active"]]
+    try:
+        participants = [u for u in db.list_participants() if u["active"]]
+    except Exception:
+        return [], 0
+
     max_z_pts = 0
     user_zebras = []
 
