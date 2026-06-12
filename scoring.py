@@ -184,7 +184,6 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
         df = df.sort_values(by=["Pontos", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
     return df
 
-
 def dashboard_metrics() -> dict:
     stats = build_user_stats()
     if not stats:
@@ -195,19 +194,18 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Extração segura dos líderes gerais
-    max_pts = max(s.total_points for s in stats) if stats else 0
-    leaders_list = [s.full_name for s in stats if s.total_points == max_pts] if stats else []
+    # 1. Líderes Gerais
+    max_pts = max(s.total_points for s in stats)
+    leaders_list = [s.full_name for s in stats if s.total_points == max_pts]
     max_exact_leader_val = stats[0].exact_scores if stats else 0
 
-    # 2. Melhor da fase (Garantindo inicialização das variáveis para evitar NameError)
+    # 2. Melhor da Fase
     best_phase_name = None
     best_phase_user_name = None
     best_phase_points_val = -1
-
+    
     try:
-        phases = db.list_phases()
-        for phase in phases:
+        for phase in db.list_phases():
             df = phase_ranking(phase["id"])
             if not df.empty:
                 top = df.iloc[0]
@@ -218,11 +216,11 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # 3. Reis do Exato reais
-    max_exatos = max(s.exact_scores for s in stats) if stats else 0
+    # 3. Reis do Exato
+    max_exatos = max(s.exact_scores for s in stats)
     exact_kings_list = [s.full_name for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # Cache de palpites local em memória pura
+    # 4. Cache para funções em lote
     user_palpites = {}
     for s in stats:
         try:
@@ -230,43 +228,48 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # 4. Estatísticas de sequências e zebras
     hat_tricks_res = _find_hat_trick_winners_mem(user_palpites)
     zebra_kings_list, max_zebra_pts_val = _find_zebra_kings_mem(user_palpites)
 
-    # 5. Escalada do ranking
+    # 5. Escalada do Ranking (Calculada de forma ultra-segura)
     climb_user_name = None
     climb_delta_val = 0
     try:
         earliest_snaps = db.get_earliest_snapshots()
         if earliest_snaps:
             earliest = {item["user_id"]: item for item in earliest_snaps}
-            current_pos = {item.user_id: idx + 1 for idx, item in enumerate(stats)}
-            for s in stats:
+            for idx, s in enumerate(stats):
                 if s.user_id in earliest:
-                    old_pos = earliest[s.user_id]["position"]
-                    new_pos = current_pos[s.user_id]
-                    delta = old_pos - new_pos
+                    delta = earliest[s.user_id]["position"] - (idx + 1)
                     if delta > climb_delta_val:
                         climb_delta_val = delta
                         climb_user_name = s.full_name
     except Exception:
         pass
 
+    # Retorno estruturado sem lógicas internas
     return {
         "leaders": leaders_list,
         "max_points": max_pts,
         "max_exact_leader": max_exact_leader_val,
-        "best_phase": {"phase": best_phase_name, "user": best_phase_user_name, "points": best_phase_points_val},
+        "best_phase": {
+            "phase": best_phase_name,
+            "user": best_phase_user_name,
+            "points": best_phase_points_val
+        },
         "exact_kings": exact_kings_list,
         "max_exact": max_exatos,
         "hat_tricks": hat_tricks_res.get("users", []),
         "max_hat_tricks": hat_tricks_res.get("count", 0),
         "max_streak": hat_tricks_res.get("streak", 0),
-        "biggest_climb": {"user": climb_user_name, "delta": climb_delta_val},
+        "biggest_climb": {
+            "user": climb_user_name,
+            "delta": climb_delta_val
+        },
         "zebra_kings": zebra_kings_list,
         "max_zebra_pts": max_zebra_pts_val
     }
+
 
 
 def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
