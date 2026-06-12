@@ -204,6 +204,8 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
 
 def dashboard_metrics() -> dict:
     stats_data = build_user_stats()
+    
+    # Se a lista estiver vazia, retorna a estrutura zerada imediatamente
     if not stats_data:
         return {
             "leaders": [], "max_points": 0, "max_exact_leader": 0,
@@ -212,12 +214,12 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Extração segura de líderes gerais
+    # 1. Líderes Gerais
     max_pts = max(s.total_points for s in stats_data)
     leaders_list = [s.full_name for s in stats_data if s.total_points == max_pts]
     max_exact_leader_val = stats_data[0].exact_scores
 
-    # 2. Melhor da fase
+    # 2. Melhor da Fase
     best_phase_name = None
     best_phase_user_name = None
     best_phase_points_val = -1
@@ -233,11 +235,11 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # 3. Reis do Exato reais
+    # 3. Reis do Exato
     max_exatos = max(s.exact_scores for s in stats_data)
     exact_kings_list = [s.full_name for s in stats_data if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # Cache local em memória
+    # 4. Processamento de Sequências e Zebras com Cache local
     user_palpites = {}
     for s in stats_data:
         try:
@@ -245,13 +247,13 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # 4. Estatísticas de sequências e zebras
     hat_tricks_res = _find_hat_trick_winners_mem(user_palpites)
     zebra_kings_list, max_zebra_pts_val = _find_zebra_kings_mem(user_palpites)
 
-    # 5. Escalada de posições
+    # 5. Escalada de Posições (Variáveis definidas fora do bloco try para total segurança de escopo)
     climb_user_name = None
     climb_delta_val = 0
+    
     try:
         earliest_snaps = db.get_earliest_snapshots()
         if earliest_snaps:
@@ -265,21 +267,30 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    return {
+    # Construção direta do dicionário final utilizando as variáveis locais validadas
+    metrics_dict = {
         "leaders": leaders_list,
         "max_points": max_pts,
         "max_exact_leader": max_exact_leader_val,
-        "best_phase": {"phase": best_phase_name, "user": best_phase_user_name, "points": best_phase_points_val},
+        "best_phase": {
+            "phase": best_phase_name,
+            "user": best_phase_user_name,
+            "points": best_phase_points_val
+        },
         "exact_kings": exact_kings_list,
         "max_exact": max_exatos,
         "hat_tricks": hat_tricks_res.get("users", []),
         "max_hat_tricks": hat_tricks_res.get("count", 0),
         "max_streak": hat_tricks_res.get("streak", 0),
-        "biggest_climb": {"user": climb_user_name, "delta": climb_delta_val},
+        "biggest_climb": {
+            "user": climb_user_name,
+            "delta": climb_delta_val
+        },
         "zebra_kings": zebra_kings_list,
         "max_zebra_pts": max_zebra_pts_val
     }
 
+    return metrics_dict
 
 def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
     try:
