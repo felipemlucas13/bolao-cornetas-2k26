@@ -173,12 +173,12 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
         
         rows.append({
             "Participante": u["full_name"], "Usuário": u["username"],
-            "Pontos": pts, "Placares Exatos": exacts, "lottery": _lottery_value(uid, u["username"])
+            "Points": pts, "Placares Exatos": exacts, "lottery": _lottery_value(uid, u["username"])
         })
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df.sort_values(by=["Pontos", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
+        df = df.sort_values(by=["Points", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
     return df
 
 
@@ -192,11 +192,9 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Coleta múltiplos líderes reais empatados
     max_pts = max(s.total_points for s in stats)
     leaders = [s for s in stats if s.total_points == max_pts]
 
-    # 2. Melhor da fase
     phases = db.list_phases()
     best_phase = None
     best_phase_user = None
@@ -205,16 +203,14 @@ def dashboard_metrics() -> dict:
         df = phase_ranking(phase["id"])
         if not df.empty:
             top = df.iloc[0]
-            if top["Pontos"] > best_phase_pts:
-                best_phase_pts = top["Pontos"]
+            if top["Points"] > best_phase_pts:
+                best_phase_pts = top["Points"]
                 best_phase_user = top["Participante"]
                 best_phase = phase["name"]
 
-    # 3. Reis do Exato reais empatados
     max_exatos = max(s.exact_scores for s in stats)
     exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # Cache local para evitar loops redundantes no banco
     user_palpites = {}
     for s in stats:
         try:
@@ -222,7 +218,6 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # Processadores locais seguros passados por parâmetro
     hat_tricks = _find_hat_trick_winners_mem(user_palpites)
     climb_user, climb_delta = _find_biggest_climb(stats)
     zebra_kings, max_zebra_pts = _find_zebra_kings_mem(user_palpites)
@@ -251,7 +246,6 @@ def _find_biggest_climb(current_stats: list[UserStats]) -> tuple[str | None, int
     if not earliest:
         return None, 0
 
-    # FIX: Variavel amarrada corretamente ao parametro da funcao para banir o NameError
     current_pos = {s.user_id: i + 1 for i, s in enumerate(current_stats)}
     best_user = None
     best_delta = 0
