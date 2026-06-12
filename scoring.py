@@ -276,26 +276,69 @@ def _find_zebra_kings_mem(palpites_por_usuario: dict) -> tuple[list[str], int]:
         participants = [u for u in db.list_participants() if u["active"]]
     except Exception:
         return [], 0
+
+    if not participants:
+        return [], 0
+
+    # 1. Mapear a tendência global de palpites por jogo para descobrir o que é "zebra"
+    # Estrutura: { game_id: { 1: qtd_vitoria_home, 0: qtd_empate, -1: qtd_vitoria_away } }
+    tendencia_jogos = {}
+    total_palpites_por_jogo = {}
+
+    for uid, preds in palpites_por_usuario.items():
+        for p in preds:
+            g_id = p.get("game_id")
+            if g_id is None:
+                continue
+            
+            # Determina o palpite do usuário (1, 0, -1)
+            pred_res = match_result(p["home_score"], p["away_score"])
+            
+            if g_id not in tendencia_jogos:
+                tendencia_jogos[g_id] = {1: 0, 0: 0, -1: 0}
+                total_palpites_por_jogo[g_id] = 0
+                
+            tendencia_jogos[g_id][pred_res] += 1
+            total_palpites_por_jogo[g_id] += 1
+
+    # 2. Calcular os pontos de zebra de cada usuário baseado na minoria
     max_z_pts = 0
     user_zebras = []
+
     for user in participants:
-        preds = palpites_por_usuario.get(user["id"], [])
+        uid = user["id"]
+        preds = palpites_por_usuario.get(uid, [])
         z_pts = 0
+        
         for p in preds:
             if not p.get("finished") or p.get("result_home") is None or p.get("result_away") is None: 
                 continue
-            rh, ra = p["result_home"], p["result_away"]
-            ph, pa = p["home_score"], p["away_score"]
-            actual = match_result(rh, ra)
-            predicted = match_result(ph, pa)
-            is_zebra = False
-            if actual == -1 and rh > ra + 1: is_zebra = True
-            elif actual == 0 and abs(rh - ra) >= 2: is_zebra = True
-            elif actual == 1 and ra > rh + 1: is_zebra = True
-            if is_zebra and predicted == actual and p.get("points", 0) > 0:
-                z_pts += p["points"]
+                
+            g_id = p.get("game_id")
+            actual_res = match_result(p["result_home"], p["result_away"])
+            pred_res = match_result(p["home_score"], p["away_score"])
+
+            # Se o usuário errou o resultado, não ganha ponto de zebra
+            if pred_res != actual_res:
+                continue
+
+            # Verifica quantos % do grupo apostou nesse resultado específico
+            total_apostas = total_palpites_por_jogo.get(g_id, 0)
+            if total_apostas > 0:
+                votos_no_resultado = tendencia_jogos[g_id].get(actual_res, 0)
+                percentual_escolha = votos_no_resultado / total_apostas
+
+                # DEFINIÇÃO DE ZEBRA: O resultado teve menos de 30% dos votos do grupo
+                if percentual_escolha <= 0.30:
+                    # Acumula os pontos que o usuário de fato ganhou com esse acerto (3, 5 ou 8 pts)
+                    # Usamos a nossa função padrão para garantir a pontuação real obtida
+                    cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
+                    z_pts += cls["points"]
+
         if z_pts > 0:
             user_zebras.append({"name": user["full_name"], "pts": z_pts})
-            if z_pts > max_z_pts: max_z_pts = z_pts
+            if z_pts > max_z_pts: 
+                max_z_pts = z_pts
+
     winners = [u["name"] for u in user_zebras if u["pts"] == max_z_pts] if max_z_pts > 0 else []
     return winners, max_z_pts
