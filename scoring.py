@@ -79,15 +79,13 @@ def build_user_stats() -> list[UserStats]:
     settings = db.get_tournament_settings()
     stats: list[UserStats] = []
 
-    # Para garantir estabilidade absoluta, usamos a função que já funciona bem no seu sistema
-    # mas agrupamos em cache local para evitar requisições repetidas no loop principal
+    # Uso das funções nativas do banco populando uma memória local cacheada por ciclo de requisição
     palpites_por_usuario = {}
     especiais_por_usuario = {}
 
     for user in all_users:
         uid = user["id"]
         try:
-            # Puxa usando a função nativa do seu database.py que está 100% correta
             palpites_por_usuario[uid] = db.get_user_predictions(uid)
         except Exception:
             palpites_por_usuario[uid] = []
@@ -108,7 +106,13 @@ def build_user_stats() -> list[UserStats]:
         correct_diffs = 0
 
         for p in finished_preds:
-            cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
+            # Proteção caso os dados venham incompletos do banco
+            if p.get("result_home") is None or p.get("result_away") is None:
+                continue
+                
+            cls = classify_prediction(
+                p["home_score"], p["away_score"], p["result_home"], p["result_away"]
+            )
             game_points += cls["points"]
             if cls["exact"]: exact_scores += 1
             if cls["correct_result"]: correct_results += 1
@@ -134,7 +138,6 @@ def build_user_stats() -> list[UserStats]:
             )
         )
 
-    # Ordenação oficial do ranking do bolão
     stats.sort(key=lambda s: (-s.total_points, -s.exact_scores, -s.correct_results, -s.champion_hit, -s.tiebreak_lottery))
     return stats
 
@@ -173,6 +176,8 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
         exacts = 0
         for p in preds:
             if p.get("finished"):
+                if p.get("result_home") is None or p.get("result_away") is None:
+                    continue
                 cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
                 pts += cls["points"]
                 if cls["exact"]: exacts += 1
@@ -198,7 +203,7 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Líderes reais (captura múltiplos utilizadores com a pontuação máxima)
+    # 1. Captura de Líderes com Empates Reais
     max_pts = max(s.total_points for s in stats) if stats else 0
     leaders = [s for s in stats if s.total_points == max_pts]
 
@@ -216,11 +221,11 @@ def dashboard_metrics() -> dict:
                 best_phase_user = top["Participante"]
                 best_phase = phase["name"]
 
-    # 3. Reis do Placar Exato
+    # 3. Reis do Placar Exato com Empates Reais
     max_exatos = max(s.exact_scores for s in stats) if stats else 0
     exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # 4. Hat-Tricks e Zebras calculados a partir do dicionário em memória local estável
+    # Reutilização de Memória Local já extraída para evitar loops de rede concorrentes
     user_palpites = {}
     for s in stats:
         try:
@@ -281,6 +286,8 @@ def _find_hat_trick_winners_mem(palpites_por_usuario: dict) -> dict:
         m_streak = 0
         h_tricks = 0
         for p in finished:
+            if p.get("result_home") is None or p.get("result_away") is None:
+                continue
             cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
             if cls["exact"]:
                 streak += 1
@@ -309,7 +316,8 @@ def _find_zebra_kings_mem(palpites_por_usuario: dict) -> tuple[list[str], int]:
         preds = palpites_por_usuario.get(user["id"], [])
         z_pts = 0
         for p in preds:
-            if not p.get("finished"): continue
+            if not p.get("finished") or p.get("result_home") is None or p.get("result_away") is None: 
+                continue
             rh, ra = p["result_home"], p["result_away"]
             ph, pa = p["home_score"], p["away_score"]
             actual = match_result(rh, ra)
