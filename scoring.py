@@ -79,25 +79,19 @@ def build_user_stats() -> list[UserStats]:
     settings = db.get_tournament_settings()
     stats: list[UserStats] = []
 
-    # Dicionário local para evitar sobrecarga de conexões repetidas
-    palpites_por_usuario = {}
-    especiais_por_usuario = {}
-
     for user in all_users:
         uid = user["id"]
+        
         try:
-            palpites_por_usuario[uid] = db.get_user_predictions(uid)
+            preds = db.get_user_predictions(uid)
         except Exception:
-            palpites_por_usuario[uid] = []
-
+            preds = []
+            
         try:
-            especiais_por_usuario[uid] = db.get_special_prediction(uid)
+            sp = db.get_special_prediction(uid)
         except Exception:
-            especiais_por_usuario[uid] = None
+            sp = None
 
-    for user in all_users:
-        uid = user["id"]
-        preds = palpites_por_usuario.get(uid, [])
         finished_preds = [p for p in preds if p.get("finished")]
 
         game_points = 0
@@ -114,7 +108,6 @@ def build_user_stats() -> list[UserStats]:
             if cls["correct_result"]: correct_results += 1
             if cls["correct_diff"]: correct_diffs += 1
 
-        sp = especiais_por_usuario.get(uid)
         special_points = 0
         champion_hit = 0
         if sp:
@@ -199,7 +192,7 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Líderes com Empates Reais (Ignorando desempate por lotaria)
+    # 1. Múltiplos líderes coletados sem desempate artificial
     max_pts = max(s.total_points for s in stats)
     leaders = [s for s in stats if s.total_points == max_pts]
 
@@ -217,11 +210,11 @@ def dashboard_metrics() -> dict:
                 best_phase_user = top["Participante"]
                 best_phase = phase["name"]
 
-    # 3. Reis do Exato com Empates Reais
+    # 3. Reis do Exato reais
     max_exatos = max(s.exact_scores for s in stats)
     exact_kings = [s for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
-    # Cache local reutilizado para Hat-Tricks e Zebras
+    # 4. Memória em Cache Protegida (Fim do RemoteProtocolError)
     user_palpites = {}
     for s in stats:
         try:
@@ -229,22 +222,24 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # 4. Hat-Tricks com Empates Reais
+    # Processamento local seguro
     hat_tricks = _find_hat_trick_winners_mem(user_palpites)
-
-    # 5. Maior Escalada (snapshots)
     climb_user, climb_delta = _find_biggest_climb(stats)
-
-    # 6. Rei das Zebras com Empates Reais
     zebra_kings, max_zebra_pts = _find_zebra_kings_mem(user_palpites)
 
     return {
-        "leaders": [l.full_name for l in leaders], "max_points": max_pts, "max_exact_leader": leaders[0].exact_scores,
+        "leaders": [l.full_name for l in leaders], 
+        "max_points": max_pts, 
+        "max_exact_leader": leaders[0].exact_scores if leaders else 0,
         "best_phase": {"phase": best_phase, "user": best_phase_user, "points": best_phase_pts},
-        "exact_kings": [e.full_name for e in exact_kings], "max_exact": max_exatos,
-        "hat_tricks": hat_tricks.get("users", []), "max_hat_tricks": hat_tricks.get("count", 0), "max_streak": hat_tricks.get("streak", 0),
+        "exact_kings": [e.full_name for e in exact_kings], 
+        "max_exact": max_exatos,
+        "hat_tricks": hat_tricks.get("users", []), 
+        "max_hat_tricks": hat_tricks.get("count", 0), 
+        "max_streak": hat_tricks.get("streak", 0),
         "biggest_climb": {"user": climb_user, "delta": climb_delta},
-        "zebra_kings": zebra_kings, "max_zebra_pts": max_zebra_pts
+        "zebra_kings": zebra_kings, 
+        "max_zebra_pts": max_zebra_pts
     }
 
 
