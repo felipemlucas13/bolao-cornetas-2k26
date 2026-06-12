@@ -172,13 +172,16 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
                 if cls["exact"]: exacts += 1
         
         rows.append({
-            "Participante": u["full_name"], "Usuário": u["username"],
-            "Points": pts, "Placares Exatos": exacts, "lottery": _lottery_value(uid, u["username"])
+            "Participante": u["full_name"], 
+            "Usuário": u["username"],
+            "Pontos": pts, 
+            "Placares Exatos": exacts, 
+            "lottery": _lottery_value(uid, u["username"])
         })
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df.sort_values(by=["Points", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
+        df = df.sort_values(by=["Pontos", "Placares Exatos", "lottery"], ascending=[False, False, False]).drop(columns=["lottery"])
     return df
 
 
@@ -192,28 +195,31 @@ def dashboard_metrics() -> dict:
             "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
         }
 
-    # 1. Extração de líderes e maiores pontuações
-    max_pts = max(s.total_points for s in stats)
-    leaders_list = [s.full_name for s in stats if s.total_points == max_pts]
+    # 1. Extração segura dos líderes gerais
+    max_pts = max(s.total_points for s in stats) if stats else 0
+    leaders_list = [s.full_name for s in stats if s.total_points == max_pts] if stats else []
     max_exact_leader_val = stats[0].exact_scores if stats else 0
 
-    # 2. Melhor da fase
-    phases = db.list_phases()
+    # 2. Melhor da fase (Garantindo inicialização das variáveis para evitar NameError)
     best_phase_name = None
     best_phase_user_name = None
     best_phase_points_val = -1
-    
-    for phase in phases:
-        df = phase_ranking(phase["id"])
-        if not df.empty:
-            top = df.iloc[0]
-            if top["Points"] > best_phase_points_val:
-                best_phase_points_val = top["Points"]
-                best_phase_user_name = top["Participante"]
-                best_phase_name = phase["name"]
 
-    # 3. Reis do Exato (Suporta múltiplos empatados)
-    max_exatos = max(s.exact_scores for s in stats)
+    try:
+        phases = db.list_phases()
+        for phase in phases:
+            df = phase_ranking(phase["id"])
+            if not df.empty:
+                top = df.iloc[0]
+                if top["Pontos"] > best_phase_points_val:
+                    best_phase_points_val = int(top["Pontos"])
+                    best_phase_user_name = str(top["Participante"])
+                    best_phase_name = str(phase["name"])
+    except Exception:
+        pass
+
+    # 3. Reis do Exato reais
+    max_exatos = max(s.exact_scores for s in stats) if stats else 0
     exact_kings_list = [s.full_name for s in stats if s.exact_scores == max_exatos] if max_exatos > 0 else []
 
     # Cache de palpites local em memória pura
@@ -224,11 +230,11 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # 4. Estatísticas avançadas processadas em lote
+    # 4. Estatísticas de sequências e zebras
     hat_tricks_res = _find_hat_trick_winners_mem(user_palpites)
     zebra_kings_list, max_zebra_pts_val = _find_zebra_kings_mem(user_palpites)
 
-    # 5. Escalada calculada de forma isolada com segurança de tipos externa
+    # 5. Escalada do ranking
     climb_user_name = None
     climb_delta_val = 0
     try:
