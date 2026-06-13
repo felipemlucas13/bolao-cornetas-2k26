@@ -221,7 +221,13 @@ with tab_games:
                     "Atualizado": formatar_data_hora(p["updated_at"]),
                 }
             )
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        
+        # FIX ARROW: Forçando a coluna Pontos para string por conta dos traços "-"
+        df_meus_palpites = pd.DataFrame(rows)
+        if not df_meus_palpites.empty:
+            df_meus_palpites["Pontos"] = df_meus_palpites["Pontos"].astype(str)
+            
+        st.dataframe(df_meus_palpites, width="stretch", hide_index=True)
         
         pdf_data = gerar_pdf_palpites(my_preds, user["full_name"])
         st.download_button(
@@ -390,8 +396,13 @@ with tab_all:
                         "Pontos": p["points"] if p["finished"] else "-",
                     }
                 )
-            # FIX DA LINHA 412: Trocado 'phase_rows' por 'rows' para carregar a tabela correta
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            
+            # FIX ARROW: Forçando a coluna Pontos para string por conta dos traços "-"
+            df_outros = pd.DataFrame(rows)
+            if not df_outros.empty:
+                df_outros["Pontos"] = df_outros["Pontos"].astype(str)
+                
+            st.dataframe(df_outros, width="stretch", hide_index=True)
         else:
             st.info("Nenhum palpite registrado nesta fase.")
 
