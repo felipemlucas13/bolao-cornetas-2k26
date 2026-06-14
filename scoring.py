@@ -362,12 +362,12 @@ def calculate_special_points(champion_pred: str | None, vice_pred: str | None, s
     # 2. Validação do Vice
     if vice_pred and settings.get("vice_team"):
         if str(vice_pred).strip().lower() == str(settings["vice_team"]).strip().lower():
-            pv = 10
+            pv = 5
 
     # 3. Validação do Artilheiro
     if scorer_pred and settings.get("top_scorer"):
         if str(scorer_pred).strip().lower() == str(settings["top_scorer"]).strip().lower():
-            ps = 10
+            ps = 5
 
     return pc, pv, ps
 
