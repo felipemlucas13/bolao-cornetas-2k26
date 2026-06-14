@@ -26,8 +26,8 @@ def logout():
 
 
 def login_form():
-    st.title("⚽ Bolão Copa FIFA 2k26")
-    st.markdown("Sistema completo de palpites para a Copa do Mundo FIFA 2026.")
+    st.title("📯 Bolão Cornetas 2k26")
+    st.markdown("Sistema completo de palpites e cornetagem para a Copa do Mundo FIFA 2026.")
 
     tab_login, tab_setup = st.tabs(["Entrar", "Configuração Inicial"])
 
@@ -75,7 +75,7 @@ def login_form():
 
 def sidebar():
     user = st.session_state.user
-    st.sidebar.title("⚽ Bolão 2k26")
+    st.sidebar.title("📯 Bolão 2k26")
     st.sidebar.markdown(f"**{user['full_name']}**")
     st.sidebar.caption(f"@{user['username']} · {user['role'].title()}")
 
