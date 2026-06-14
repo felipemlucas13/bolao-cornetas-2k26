@@ -6,8 +6,8 @@ import auth
 import database as db
 
 st.set_page_config(
-    page_title="Bolão Copa FIFA 2k26",
-    page_icon="⚽",
+    page_title="Bolão Cornetas FIFA 2k26",
+    page_icon="📯",
     layout="wide",
     initial_sidebar_state="expanded",
 )
