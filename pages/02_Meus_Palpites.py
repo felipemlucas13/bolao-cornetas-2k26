@@ -65,7 +65,13 @@ def gerar_pdf_palpites(my_preds: list, full_name: str) -> bytes:
     
     for p in my_preds:
         res = f"{p['result_home']} x {p['result_away']}" if p["finished"] else "-"
-        pts = str(p["points"]) if p["finished"] else "-"
+        
+        # Cálculo dinâmico para o PDF também ficar correto
+        if p["finished"] and p.get("result_home") is not None and p.get("result_away") is not None:
+            cls = scoring.classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
+            pts = str(cls["points"])
+        else:
+            pts = "-"
         
         table_data.append([
             Paragraph(p["phase_name"], style_cell),
@@ -207,21 +213,38 @@ with tab_games:
         rows = []
         for p in my_preds:
             result = "-"
-            pts = p["points"]
+            pts = "-"
+            
             if p["finished"]:
                 result = f"{p['result_home']} x {p['result_away']}"
+                # FIX REAL-TIME: Calcula direto do scoring.py em vez de usar a coluna estática errada do banco
+                if p.get("result_home") is not None and p.get("result_away") is not None:
+                    cls = scoring.classify_prediction(
+                        p["home_score"], p["away_score"], 
+                        p["result_home"], p["result_away"]
+                    )
+                    pts = cls["points"]
+                else:
+                    pts = 0
+
             rows.append(
                 {
                     "Fase": p["phase_name"],
                     "Jogo": f"{p['team_home']} x {p['team_away']}",
                     "Palpite": f"{p['home_score']} x {p['away_score']}",
                     "Resultado": result,
-                    "Pontos": pts if p["finished"] else "-",
+                    "Pontos": pts,
                     "Versão": p["version"],
                     "Atualizado": formatar_data_hora(p["updated_at"]),
                 }
             )
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        
+        # FIX ARROW DEFINITIVO: Converte a coluna "Pontos" explicitamente para string antes de renderizar
+        df_meus_palpites = pd.DataFrame(rows)
+        if not df_meus_palpites.empty:
+            df_meus_palpites["Pontos"] = df_meus_palpites["Pontos"].astype(str)
+            
+        st.dataframe(df_meus_palpites, width="stretch", hide_index=True)
         
         pdf_data = gerar_pdf_palpites(my_preds, user["full_name"])
         st.download_button(
@@ -383,7 +406,6 @@ with tab_all:
                 
                 if p["finished"]:
                     result = f"{p['result_home']} x {p['result_away']}"
-                    # Calcula na hora os pontos reais com base no resultado atualizado
                     if p.get("result_home") is not None and p.get("result_away") is not None:
                         cls = scoring.classify_prediction(
                             p["home_score"], p["away_score"], 
@@ -403,8 +425,12 @@ with tab_all:
                     }
                 )
 
-            # FIX DA LINHA 412: Trocado 'phase_rows' por 'rows' para carregar a tabela correta
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            # Converte para string também na aba dos outros para total segurança contra misturas de tipos
+            df_outros = pd.DataFrame(rows)
+            if not df_outros.empty:
+                df_outros["Pontos"] = df_outros["Pontos"].astype(str)
+
+            st.dataframe(df_outros, width="stretch", hide_index=True)
         else:
             st.info("Nenhum palpite registrado nesta fase.")
 
