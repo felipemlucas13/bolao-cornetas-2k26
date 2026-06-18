@@ -404,7 +404,7 @@ with tab_all:
             st.markdown("🌐 **Ajustar fuso horário da tabela:**")
             fuso_selecionado = st.radio(
                 "Escolha o fuso horário para exibição das datas dos jogos:",
-                options=["São Paulo (Brasília)", "Austrália Ocidental (Perth)", "EUA (Nova York / EST)"],
+                options=["Rio de Janeiro", "Perth", "Dallas"],
                 horizontal=True,
                 label_visibility="collapsed",
                 key="fuso_selector"
@@ -438,14 +438,14 @@ with tab_all:
                         dt = datetime.strptime(clean_date, "%Y-%m-%d %H:%M:%S")
                         
                         # Aplica o deslocamento matemático dependendo da escolha
-                        if fuso_selecionado == "Austrália Ocidental (Perth)":
+                        if fuso_selecionado == "Perth":
                             # Perth está +11h à frente do horário de Brasília (ajuste se sua base usar UTC)
                             from datetime import timedelta
                             dt = dt + timedelta(hours=11)
-                        elif fuso_selecionado == "EUA (Nova York / EST)":
+                        elif fuso_selecionado == "Dallas":
                             # Nova York geralmente está -1h atrás do horário de Brasília
                             from datetime import timedelta
-                            dt = dt - timedelta(hours=1)
+                            dt = dt - timedelta(hours=2)
                         
                         # Formata de forma amigável com a função que você já possui
                         dias_ptbr = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
