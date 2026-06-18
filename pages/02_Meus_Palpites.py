@@ -448,7 +448,7 @@ with tab_all:
                         # Formata de maneira amigável para exibição
                         dias_ptbr = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
                         dia_semana = dias_ptbr[dt.weekday()]
-                        data_convertida = f"{dia_semana}, {dt.strftime('%d/%m %H:%M')}"
+                        data_convertida = dt.strftime('%Y/%m/%d %H:%M') + f" ({dia_semana})"
                     except Exception:
                         data_convertida = formatar_data_hora(data_original)
 
