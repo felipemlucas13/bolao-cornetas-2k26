@@ -404,7 +404,7 @@ with tab_all:
             st.markdown("🌐 **Ajustar fuso horário da tabela:**")
             fuso_selecionado = st.radio(
                 "Escolha o fuso horário para exibição das datas dos jogos:",
-                options=["Rio de Janeiro", "Perth", "Dallas"],
+                options=["Rio de Janeiro", "Perth", "NY"],
                 horizontal=True,
                 label_visibility="collapsed",
                 key="fuso_selector"
@@ -442,8 +442,8 @@ with tab_all:
                         from datetime import timedelta
                         if fuso_selecionado == "Perth":
                             dt = dt + timedelta(hours=11)
-                        elif fuso_selecionado == "Dallas":
-                            dt = dt - timedelta(hours=2)
+                        elif fuso_selecionado == "NY":
+                            dt = dt - timedelta(hours=1)
                         
                         # Formata de maneira amigável para exibição
                         dias_ptbr = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
