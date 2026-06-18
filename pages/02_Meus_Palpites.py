@@ -400,7 +400,7 @@ with tab_all:
         all_preds = db.get_all_predictions(phase_id)
 
         if all_preds:
-            # --- SELETOR DE FUSO HORÁRIO ---
+            # --- SELETOR DE FUSO HORÁRIO ATUALIZADO ---
             st.markdown("🌐 **Ajustar fuso horário da tabela:**")
             fuso_selecionado = st.radio(
                 "Escolha o fuso horário para exibição das datas dos jogos:",
@@ -415,7 +415,7 @@ with tab_all:
                 result = "-"
                 pts = "-"
                 
-                # 1. Trata o cálculo dos pontos em tempo real para evitar erros
+                # 1. Trata o cálculo dos pontos em tempo real
                 if p["finished"]:
                     result = f"{p['result_home']} x {p['result_away']}"
                     if p.get("result_home") is not None and p.get("result_away") is not None:
@@ -427,56 +427,54 @@ with tab_all:
                     else:
                         pts = 0
 
-                # 2. Conversão e Ajuste Dinâmico do Fuso Horário
-                data_original = p.get("game_datetime") # Esperado formato ISO 'YYYY-MM-DDTHH:MM:SS'
+                # 2. CAPTURA E CONVERSÃO DO HORÁRIO (Base padrão do banco = Rio de Janeiro)
+                game_data = p.get("games") or {}
+                data_original = game_data.get("game_datetime")
                 data_convertida = "-"
                 
                 if data_original:
                     try:
-                        # Limpa string e converte para objeto datetime nativo do Python
-                        clean_date = data_original.split("+")[0].split(".")[0].replace("T", " ")
+                        # Converte string ISO para objeto datetime nativo do Python
+                        clean_date = str(data_original).split("+")[0].split(".")[0].replace("T", " ")
                         dt = datetime.strptime(clean_date, "%Y-%m-%d %H:%M:%S")
                         
-                        # Aplica o deslocamento matemático dependendo da escolha
+                        # Aplica deslocamentos matemáticos solicitados a partir do fuso base (Rio de Janeiro)
+                        from datetime import timedelta
                         if fuso_selecionado == "Perth":
-                            # Perth está +11h à frente do horário de Brasília (ajuste se sua base usar UTC)
-                            from datetime import timedelta
                             dt = dt + timedelta(hours=11)
                         elif fuso_selecionado == "Dallas":
-                            # Nova York geralmente está -1h atrás do horário de Brasília
-                            from datetime import timedelta
                             dt = dt - timedelta(hours=2)
                         
-                        # Formata de forma amigável com a função que você já possui
+                        # Formata de maneira amigável para exibição
                         dias_ptbr = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
                         dia_semana = dias_ptbr[dt.weekday()]
                         data_convertida = f"{dia_semana}, {dt.strftime('%d/%m %H:%M')}"
                     except Exception:
                         data_convertida = formatar_data_hora(data_original)
 
-                # 3. Monta a linha incluindo as novas colunas requisitadas
+                # 3. Monta a linha incluindo as colunas com os caminhos corretos do banco
                 rows.append(
                     {
-                        "ID Jogo": p.get("game_id", p.get("id", "-")),
+                        "ID Jogo": p.get("game_id") or game_data.get("id") or "-",
                         "Horário Jogo": data_convertida,
-                        "Participante": p["full_name"],
-                        "Jogo": f"{p['team_home']} x {p['team_away']}",
-                        "Palpite": f"{p['home_score']} x {p['away_score']}",
+                        "Participante": p.get("full_name", "-"),
+                        "Jogo": f"{p.get('team_home', '')} x {p.get('team_away', '')}",
+                        "Palpite": f"{p.get('home_score', 0)} x {p.get('away_score', 0)}",
                         "Resultado": result,
                         "Pontos": pts,
                     }
                 )
 
-            # Transforma em DataFrame e garante tipo texto na coluna Pontos contra travamentos
+            # Transforma em DataFrame e força string contra bugs do Apache Arrow
             df_outros = pd.DataFrame(rows)
             if not df_outros.empty:
                 df_outros["Pontos"] = df_outros["Pontos"].astype(str)
                 
-                # Deixa pré-ordenado por ID Jogo para ficar organizado por padrão
+                # Deixa pré-ordenado por ID Jogo por padrão
                 if "ID Jogo" in df_outros.columns:
                     df_outros = df_outros.sort_values(by=["ID Jogo", "Participante"]).reset_index(drop=True)
 
-            # Exibe a tabela final. O usuário poderá clicar em cima de "ID Jogo" ou "Horário Jogo" para reordenar!
+            # Renderiza a tabela limpa e linda
             st.dataframe(df_outros, width="stretch", hide_index=True)
         else:
             st.info("Nenhum palpite registrado nesta fase.")
@@ -494,4 +492,3 @@ with tab_all:
                 "Pts Campeão", "Pts Vice", "Pts Artilheiro",
             ]
             st.dataframe(df_sp, width="stretch", hide_index=True)
-
