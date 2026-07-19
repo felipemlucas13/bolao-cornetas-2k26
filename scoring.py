@@ -93,11 +93,14 @@ def build_user_stats() -> list[UserStats]:
             if cls["correct_diff"]: correct_diffs += 1
 
         special_points, champion_hit = 0, 0
-        if sp:
-            special_points = int(sp.get("points_champion", 0) + sp.get("points_vice", 0) + sp.get("points_scorer", 0))
-            if settings and sp.get("champion") and settings.get("champion_team"):
-                if str(sp["champion"]).strip().lower() == str(settings["champion_team"]).strip().lower():
-                    champion_hit = 1
+        if sp and sp.get("id") is not None:
+            # 1. CORREÇÃO DA PONTUAÇÃO ESPECIAL: Calcula os pontos reais dinamicamente
+            pc, pv, ps = calculate_special_points(
+                sp.get("champion"), sp.get("vice"), sp.get("top_scorer"), settings
+            )
+            special_points = pc + pv + ps
+            if pc > 0:
+                champion_hit = 1
 
         stats_list.append(
             UserStats(
@@ -154,7 +157,7 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
         rows.append({
             "Participante": str(u["full_name"]), 
             "Usuário": str(u["username"]),
-            "Pontos": int(pts), # Sempre inteiro, nunca "-"
+            "Pontos": int(pts),
             "Placares Exatos": int(exacts), 
             "lottery": _lottery_value(uid, u["username"])
         })
@@ -165,19 +168,15 @@ def phase_ranking(phase_id: int) -> pd.DataFrame:
 
 def dashboard_metrics() -> dict:
     stats_data = build_user_stats()
-    
-    # Dicionário base seguro predefinido para blindagem contra NameError
     res = {
         "leaders": [], "max_points": 0, "max_exact_leader": 0,
         "best_phase": {"phase": None, "user": None, "points": -1},
         "exact_kings": [], "max_exact": 0, "hat_tricks": [], "max_hat_tricks": 0, "max_streak": 0,
         "biggest_climb": {"user": None, "delta": 0}, "zebra_kings": [], "max_zebra_pts": 0
     }
-    
     if not stats_data:
         return res
 
-    # 1. Líderes Gerais
     try:
         max_pts = max(s.total_points for s in stats_data)
         res["max_points"] = max_pts
@@ -186,7 +185,6 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # 2. Melhor da Fase
     try:
         for phase in db.list_phases():
             df = phase_ranking(phase["id"])
@@ -199,7 +197,6 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # 3. Reis do Exato
     try:
         max_exatos = max(s.exact_scores for s in stats_data)
         res["max_exact"] = max_exatos
@@ -208,7 +205,6 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # Cache de palpites local em lote
     user_palpites = {}
     for s in stats_data:
         try:
@@ -216,7 +212,6 @@ def dashboard_metrics() -> dict:
         except Exception:
             user_palpites[s.user_id] = []
 
-    # 4. Sequências e Zebras
     try:
         hat_tricks_res = _find_hat_trick_winners_mem(user_palpites)
         res["hat_tricks"] = hat_tricks_res.get("users", [])
@@ -229,7 +224,6 @@ def dashboard_metrics() -> dict:
     except Exception:
         pass
 
-    # 5. Maior Escalada
     try:
         earliest_snaps = db.get_earliest_snapshots()
         if earliest_snaps:
@@ -279,135 +273,103 @@ def _find_zebra_kings_mem(palpites_por_usuario: dict) -> tuple[list[str], int]:
         participants = [u for u in db.list_participants() if u["active"]]
     except Exception:
         return [], 0
-
     if not participants:
         return [], 0
 
-    # 1. Mapear a tendência global de palpites por jogo para descobrir o que é "zebra"
-    # Estrutura: { game_id: { 1: qtd_vitoria_home, 0: qtd_empate, -1: qtd_vitoria_away } }
     tendencia_jogos = {}
     total_palpites_por_jogo = {}
-
     for uid, preds in palpites_por_usuario.items():
         for p in preds:
             g_id = p.get("game_id")
-            if g_id is None:
-                continue
-            
-            # Determina o palpite do usuário (1, 0, -1)
+            if g_id is None: continue
             pred_res = match_result(p["home_score"], p["away_score"])
-            
             if g_id not in tendencia_jogos:
                 tendencia_jogos[g_id] = {1: 0, 0: 0, -1: 0}
                 total_palpites_por_jogo[g_id] = 0
-                
             tendencia_jogos[g_id][pred_res] += 1
             total_palpites_por_jogo[g_id] += 1
 
-    # 2. Calcular os pontos de zebra de cada usuário baseado na minoria
     max_z_pts = 0
     user_zebras = []
-
     for user in participants:
         uid = user["id"]
         preds = palpites_por_usuario.get(uid, [])
         z_pts = 0
-        
         for p in preds:
             if not p.get("finished") or p.get("result_home") is None or p.get("result_away") is None: 
                 continue
-                
             g_id = p.get("game_id")
             actual_res = match_result(p["result_home"], p["result_away"])
             pred_res = match_result(p["home_score"], p["away_score"])
-
-            # Se o usuário errou o resultado, não ganha ponto de zebra
-            if pred_res != actual_res:
-                continue
-
-            # Verifica quantos % do grupo apostou nesse resultado específico
+            if pred_res != actual_res: continue
             total_apostas = total_palpites_por_jogo.get(g_id, 0)
             if total_apostas > 0:
                 votos_no_resultado = tendencia_jogos[g_id].get(actual_res, 0)
                 percentual_escolha = votos_no_resultado / total_apostas
-
-                # DEFINIÇÃO DE ZEBRA: O resultado teve menos de 30% dos votos do grupo
                 if percentual_escolha <= 0.30:
-                    # Acumula os pontos que o usuário de fato ganhou com esse acerto (3, 5 ou 8 pts)
-                    # Usamos a nossa função padrão para garantir a pontuação real obtida
                     cls = classify_prediction(p["home_score"], p["away_score"], p["result_home"], p["result_away"])
                     z_pts += cls["points"]
-
         if z_pts > 0:
             user_zebras.append({"name": user["full_name"], "pts": z_pts})
-            if z_pts > max_z_pts: 
-                max_z_pts = z_pts
-
+            if z_pts > max_z_pts: max_z_pts = z_pts
     winners = [u["name"] for u in user_zebras if u["pts"] == max_z_pts] if max_z_pts > 0 else []
     return winners, max_z_pts
     
 def calculate_special_points(champion_pred: str | None, vice_pred: str | None, scorer_pred: str | None, settings: dict | None) -> tuple[int, int, int]:
-    """Calcula os pontos dos palpites especiais baseado nas escolhas do usuário e configurações atuais."""
+    """Calcula a pontuação especial limpando espaços, ignorando maiúsculas e corrigindo chaves do banco."""
     pc, pv, ps = 0, 0, 0
-    
     if not settings:
         return pc, pv, ps
 
-    # 1. Validação do Campeão
-    if champion_pred and settings.get("champion_team"):
-        if str(champion_pred).strip().lower() == str(settings["champion_team"]).strip().lower():
-            # Altere o valor da pontuação (ex: 10, 15, etc) conforme a regra do seu bolão
-            pc = 10 
+    # Higienização e padronização das strings oficiais vindas das colunas corretas do Supabase
+    official_champion = str(settings.get("champion_team") or "").strip().lower()
+    official_vice = str(settings.get("vice_team") or "").strip().lower()
+    # MUDANÇA CRÍTICA: Corrigido de "top_scorer" para "top_scorers" (combinando com o database.py)
+    official_scorers = str(settings.get("top_scorers") or "").strip().lower()
 
-    # 2. Validação do Vice
-    if vice_pred and settings.get("vice_team"):
-        if str(vice_pred).strip().lower() == str(settings["vice_team"]).strip().lower():
-            pv = 5
+    # Higienização dos palpites enviados pelo participante
+    u_champ = str(champion_pred or "").strip().lower()
+    u_vice = str(vice_pred or "").strip().lower()
+    u_scorer = str(scorer_pred or "").strip().lower()
 
-    # 3. Validação do Artilheiro
-    if scorer_pred and settings.get("top_scorer"):
-        if str(scorer_pred).strip().lower() == str(settings["top_scorer"]).strip().lower():
-            ps = 5
+    # Aplicação das regras de pontuação
+    if u_champ and u_champ == official_champion:
+        pc = 10 
+
+    if u_vice and u_vice == official_vice:
+        pv = 5
+
+    # Checagem flexível contida para suportar empates múltiplos em listas de artilharia
+    if u_scorer and official_scorers and (u_scorer in official_scorers):
+        ps = 5
 
     return pc, pv, ps
 
 def can_view_all_predictions(status: str) -> bool:
-    """Retorna True se a fase já foi fechada ou finalizada, permitindo auditoria dos outros."""
     return status in ["Fechada", "Finalizada"]
 
 def user_statistics(user_id: int) -> dict:
-    """Calcula estatísticas detalhadas de um usuário para a página de palpites."""
     stats_list = build_user_stats()
-    
-    # Encontra o objeto UserStats do usuário específico
     user_data = next((s for s in stats_list if s.user_id == user_id), None)
-    
     if not user_data:
         return {
-            "total_predictions": 0,
-            "finished_predictions": 0,
-            "exact_scores": 0,
-            "total_points": 0,
-            "correct_results": 0,
-            "by_phase": {}
+            "total_predictions": 0, "finished_predictions": 0, "exact_scores": 0,
+            "total_points": 0, "correct_results": 0, "by_phase": {}
         }
         
-    # Inicializa estrutura de dados por fase de forma segura para o Pandas/PyArrow
     by_phase_data = {}
     try:
-        # Busca todas as fases cadastradas
         for phase in db.list_phases():
             df_p = phase_ranking(phase["id"])
             if not df_p.empty:
-                # Localiza a linha do participante no ranking da fase
                 user_row = df_p[df_p["Participante"] == user_data.full_name]
                 if not user_row.empty:
                     row = user_row.iloc[0]
                     by_phase_data[phase["name"]] = {
-                        "palpites": int(user_data.predictions_count), # Valor total aproximado
-                        "pontos": int(row.get("Pontos", 0)),          # Garante tipo numérico inteiro
-                        "exatos": int(row.get("Placares Exatos", 0)), # Garante tipo numérico inteiro
-                        "corretos": 0 # Pode deixar zerado ou mapear se tiver a coluna
+                        "palpites": int(user_data.predictions_count),
+                        "pontos": int(row.get("Pontos", 0)),          
+                        "exatos": int(row.get("Placares Exatos", 0)), 
+                        "corretos": 0 
                     }
     except Exception:
         pass
@@ -421,23 +383,14 @@ def user_statistics(user_id: int) -> dict:
         "by_phase": by_phase_data
     }
 
-
 def recalculate_all_scores() -> dict:
-    """Função adaptada para satisfazer o painel de Admin.
-    Como o build_user_stats já calcula tudo dinamicamente sob demanda, 
-    esta função serve para limpar caches e retornar o status esperado pelo Admin."""
-    # Retorna o formato esperado pela linha 306 do 01_Admin.py
     return {
         "game_predictions_updated": len(build_user_stats()),
         "special_predictions_updated": len(db.get_all_special_predictions())
     }
 
 def save_current_ranking_snapshot():
-    """Função adaptada para satisfazer a linha 305 do painel de Admin.
-    Registra ou simula um snapshot se a base de dados possuir a função correspondente."""
     try:
-        # Se sua db tiver um método para salvar snapshots de ranking, chame aqui.
-        # Caso não tenha, o bloco passa em branco de forma segura sem quebrar o app.
         if hasattr(db, "save_ranking_snapshot"):
             db.save_ranking_snapshot()
     except Exception:
