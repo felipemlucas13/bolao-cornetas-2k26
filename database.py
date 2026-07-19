@@ -273,18 +273,15 @@ def create_game(
 
 
 def list_games(phase_id: int | None = None) -> list[dict]:
-    # O Supabase permite fazer INNER JOINs referenciando o nome da tabela relacionada
     query = supabase.table("games").select("*, phases!inner(name, sort_order, status)")
     
     if phase_id:
         query = query.eq("phase_id", phase_id)
         result = query.execute()
-        # Mapeia as propriedades aninhadas para manter compatibilidade com as chaves usadas pelo frontend
         for row in result.data:
             phase = row.get("phases") or {}
             row["phase_name"] = phase.get("name")
             row["phase_status"] = phase.get("status")
-        # Ordena localmente por datetime e id
         return sorted(result.data, key=lambda g: (g.get("game_datetime") or "", g["id"]))
     else:
         result = query.execute()
@@ -293,7 +290,6 @@ def list_games(phase_id: int | None = None) -> list[dict]:
             row["phase_name"] = phase.get("name")
             row["phase_status"] = phase.get("status")
             row["phase_sort_order"] = phase.get("sort_order", 0)
-        # Ordena localmente seguindo a regra antiga: ordem da fase, data do jogo, id do jogo
         return sorted(result.data, key=lambda g: (g.get("phase_sort_order", 0), g.get("game_datetime") or "", g["id"]))
 
 
@@ -350,7 +346,6 @@ def save_prediction(user_id: int, game_id: int, home_score: int, away_score: int
         pred_id = result.data[0]["id"]
         version = 1
 
-    # --- BLINDAGEM CONTRA CLIQUE DUPLO NO HISTÓRICO ---
     try:
         supabase.table("prediction_history").insert({
             "prediction_id": pred_id,
@@ -362,8 +357,6 @@ def save_prediction(user_id: int, game_id: int, home_score: int, away_score: int
             "saved_at": ts
         }).execute()
     except Exception:
-        # Se o clique duplo tentar inserir a mesma versão ao mesmo tempo,
-        # o Python ignora o erro e deixa o app seguir sem travar a tela do usuário!
         pass
 
     return result.data[0]
@@ -384,7 +377,6 @@ def get_user_predictions(user_id: int, phase_id: int | None = None) -> list[dict
     
     for row in result.data:
         game = row.get("games") or {}
-        # Garante que o filtro por fase_id funcionou no join aninhado
         if phase_id and game.get("phase_id") != phase_id:
             continue
             
@@ -450,68 +442,67 @@ def get_prediction_history(user_id: int, game_id: int | None = None) -> list[dic
     if game_id:
         query = query.eq("game_id", game_id)
         
-    result = query.execute() # Consulta pura sem travar na sintaxe de ordem
+    result = query.execute()
     
     for row in result.data:
         game = row.get("games") or {}
         row["team_home"] = game.get("team_home")
         row["team_away"] = game.get("team_away")
         
-    # O Python ordena de forma nativa e infalível pela chave 'version' de forma invertida (reverse=True -> DESC)
     return sorted(result.data, key=lambda x: x.get("version", 0), reverse=True)
 
 
 # --- Special Predictions ---
 
 def save_special_prediction(user_id: int, champion: str, vice: str, top_scorer: str) -> dict:
+    """Salva os palpites especiais usando UPSERT seguro e gera histórico."""
     ts = now_iso()
-    existing = supabase.table("special_predictions").select("*").eq("user_id", user_id).limit(1).execute()
-
-    if existing.data:
-        existing_sp = existing.data[0]
-        new_version = existing_sp["version"] + 1
-        result = supabase.table("special_predictions").update({
-            "champion": champion.strip(),
-            "vice": vice.strip(),
-            "top_scorer": top_scorer.strip(),
-            "version": new_version,
-            "updated_at": ts
-        }).eq("id", existing_sp["id"]).execute()
-        sp_id = existing_sp["id"]
-        version = new_version
+    existing = get_special_prediction(user_id)
+    
+    # Se existirem chaves preenchidas, incrementa a versão baseando-se no dicionário recuperado
+    if existing and existing.get("id") is not None:
+        new_version = existing.get("version", 1) + 1
     else:
-        result = supabase.table("special_predictions").insert({
-            "user_id": user_id,
-            "champion": champion.strip(),
-            "vice": vice.strip(),
-            "top_scorer": top_scorer.strip(),
-            "version": 1,
-            "created_at": ts,
-            "updated_at": ts
-        }).execute()
-        sp_id = result.data[0]["id"]
-        version = 1
+        new_version = 1
 
-    supabase.table("special_prediction_history").insert({
-        "special_prediction_id": sp_id,
+    payload = {
         "user_id": user_id,
         "champion": champion.strip(),
         "vice": vice.strip(),
         "top_scorer": top_scorer.strip(),
-        "version": version,
-        "saved_at": ts
-    }).execute()
+        "version": new_version,
+        "updated_at": ts
+    }
+
+    # UPSERT baseado na restrição exclusiva de user_id
+    result = supabase.table("special_predictions").upsert(payload, on_conflict="user_id").execute()
+    sp_id = result.data[0]["id"]
+
+    try:
+        supabase.table("special_prediction_history").insert({
+            "special_prediction_id": sp_id,
+            "user_id": user_id,
+            "champion": champion.strip(),
+            "vice": vice.strip(),
+            "top_scorer": top_scorer.strip(),
+            "version": new_version,
+            "saved_at": ts
+        }).execute()
+    except Exception:
+        pass
 
     return result.data[0]
 
 
-def get_special_prediction(user_id: int) -> dict | None:
-    result = supabase.table("special_predictions").select("*").eq("user_id", user_id).limit(1).execute()
-    
-    if result.data and len(result.data) > 0:
-        return result.data[0]
-    
-    # Retorna None se não houver dados, o módulo scoring.py sabe lidar com isso se receber um dicionário vazio simulado
+def get_special_prediction(user_id: int) -> dict:
+    """Busca o palpite especial do usuário com fallback seguro."""
+    try:
+        result = supabase.table("special_predictions").select("*").eq("user_id", user_id).limit(1).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+    except Exception as e:
+        print(f"Erro de conexão ao buscar special_predictions: {e}")
+        
     return {
         "id": None,
         "user_id": user_id,
@@ -526,12 +517,16 @@ def get_special_prediction(user_id: int) -> dict | None:
 
 
 def get_all_special_predictions() -> list[dict]:
-    result = supabase.table("special_predictions").select("*, users!inner(full_name, username)").execute()
-    for row in result.data:
-        user = row.get("users") or {}
-        row["full_name"] = user.get("full_name")
-        row["username"] = user.get("username")
-    return sorted(result.data, key=lambda u: u.get("full_name") or "")
+    try:
+        result = supabase.table("special_predictions").select("*, users!inner(full_name, username)").execute()
+        for row in result.data:
+            user = row.get("users") or {}
+            row["full_name"] = user.get("full_name")
+            row["username"] = user.get("username")
+        return sorted(result.data, key=lambda u: u.get("full_name") or "")
+    except Exception as e:
+        print(f"Erro ao listar todos os palpites especiais: {e}")
+        return []
 
 
 def update_special_points(user_id: int, points_champion: int, points_vice: int, points_scorer: int):
@@ -543,19 +538,26 @@ def update_special_points(user_id: int, points_champion: int, points_vice: int, 
 
 
 def get_special_prediction_history(user_id: int) -> list[dict]:
-    result = supabase.table("special_prediction_history").select("*").eq("user_id", user_id).execute()
-    
-    # Ordenação nativa Python estável
-    return sorted(result.data, key=lambda x: x.get("version", 0), reverse=True)
+    try:
+        result = supabase.table("special_prediction_history").select("*").eq("user_id", user_id).execute()
+        return sorted(result.data, key=lambda x: x.get("version", 0), reverse=True)
+    except Exception as e:
+        print(f"Erro ao obter histórico especial: {e}")
+        return []
 
 
 # --- Tournament Settings ---
 
 def get_tournament_settings() -> dict | None:
-    result = supabase.table("tournament_settings").select("*").eq("id", 1).limit(1).execute()
-    if not result.data:
-        return None
-    return result.data[0]
+    """Busca configurações gerais com blindagem try/except contra quebras de timeout."""
+    try:
+        result = supabase.table("tournament_settings").select("*").eq("id", 1).limit(1).execute()
+        if not result.data:
+            return None
+        return result.data[0]
+    except Exception as e:
+        print(f"Falha de conexão em get_tournament_settings (Rede/Supabase): {e}")
+        return {}
 
 
 def update_tournament_settings(champion: str, vice: str, top_scorers: str):
@@ -580,8 +582,6 @@ def save_ranking_snapshot(user_id: int, total_points: int, position: int):
 
 def get_latest_snapshots() -> list[dict]:
     result = supabase.table("ranking_snapshots").select("*").execute()
-    
-    # Ordena nativamente pela data do snapshot em ordem decrescente
     sorted_data = sorted(result.data, key=lambda x: x.get("snapshot_at", ""), reverse=True)
     
     seen = set()
