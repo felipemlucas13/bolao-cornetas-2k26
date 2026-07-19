@@ -199,12 +199,13 @@ def render_predictions_page():
         if not phases:
             st.info("Nenhuma fase registrada.")
         else:
-            phase_options_all = {p["name"]: p for p in phases}
+            # Revertido estritamente para a indexação simples que o seu código original aceitava
+            phase_options_all = {p["name"]: p["id"] for p in phases}
             selected_p_name = st.selectbox("Selecione a fase para auditar:", list(phase_options_all.keys()), key="sb_audit")
-            phase_obj = phase_options_all[selected_p_name]
+            p_id = phase_options_all[selected_p_name]
             
-            p_status = phase_obj.get("status", "Aberta")
-            p_id = phase_obj.get("id")
+            current_p_obj = next((p for p in phases if p["id"] == p_id), None)
+            p_status = current_p_obj.get("status", "Aberta") if current_p_obj else "Aberta"
 
             if scoring.can_view_all_predictions(p_status):
                 try:
@@ -226,7 +227,6 @@ def render_predictions_page():
             else:
                 st.info(f"🔒 Os palpites das partidas da fase '{selected_p_name}' estão ocultos.")
 
-        # Exibição correta e dinâmica da tabela geral dos palpites de longo prazo
         st.divider()
         st.subheader("Palpites especiais de todos")
         
@@ -245,7 +245,6 @@ def render_predictions_page():
 
             rows_sp = []
             for row in all_sp:
-                # Chama a lógica python correta do scoring.py em tempo de execução
                 pc, pv, ps = scoring.calculate_special_points(
                     row.get("champion"),
                     row.get("vice"),
