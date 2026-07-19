@@ -43,7 +43,6 @@ def render_predictions_page():
             selected_phase_name = st.selectbox("Escolha a Fase:", list(phase_options.keys()))
             phase_id = phase_options[selected_phase_name]
 
-            # Busca o status da fase para saber se está aberta
             current_phase = next((p for p in phases if p["id"] == phase_id), None)
             phase_status = current_phase.get("status", "Aberta") if current_phase else "Aberta"
 
@@ -52,7 +51,6 @@ def render_predictions_page():
             except Exception:
                 user_preds = []
 
-            # Filtra apenas os palpites pertencentes à fase selecionada
             phase_preds = [p for p in user_preds if p.get("phase_id") == phase_id]
 
             if not phase_preds:
@@ -100,7 +98,6 @@ def render_predictions_page():
                                 disabled=not is_phase_open
                             )
                         
-                        # Se o jogo já terminou, mostra o placar oficial e a pontuação obtida
                         if p.get("finished") and p.get("result_home") is not None and p.get("result_away") is not None:
                             cls = scoring.classify_prediction(
                                 pred_home, pred_away, p["result_home"], p["result_away"]
@@ -147,7 +144,6 @@ def render_predictions_page():
         if sp is None:
             sp = {}
 
-        # Proteção contra None usando string vazia como padrão (.get)
         current_champ = sp.get("champion", "")
         current_vice = sp.get("vice", "")
         current_scorer = sp.get("top_scorer", "")
@@ -157,34 +153,18 @@ def render_predictions_page():
         except Exception:
             settings = {}
 
-        # Verifica se os palpites especiais estão bloqueados globalmente pelo administrador
         specials_blocked = settings.get("block_specials", False)
 
         if specials_blocked:
             st.warning("🔒 Os palpites especiais foram bloqueados pela administração. Não é possível fazer alterações.")
 
         with st.form(key="form_special_predictions"):
-            champ_input = st.text_input(
-                "Qual seleção será a Campeã?", 
-                value=str(current_champ or ""), 
-                disabled=specials_blocked
-            )
-            vice_input = st.text_input(
-                "Qual seleção será a Vice-Campeã?", 
-                value=str(current_vice or ""), 
-                disabled=specials_blocked
-            )
-            scorer_input = st.text_input(
-                "Quem será o Artilheiro da Copa?", 
-                value=str(current_scorer or ""), 
-                disabled=specials_blocked
-            )
+            champ_input = st.text_input("Qual seleção será a Campeã?", value=str(current_champ or ""), disabled=specials_blocked)
+            vice_input = st.text_input("Qual seleção será a Vice-Campeã?", value=str(current_vice or ""), disabled=specials_blocked)
+            scorer_input = st.text_input("Quem será o Artilheiro da Copa?", value=str(current_scorer or ""), disabled=specials_blocked)
 
-            # Exibe auditoria local caso o admin já tenha definido os resultados oficiais
             if settings.get("champion_team") or settings.get("vice_team") or settings.get("top_scorers"):
-                pc, pv, ps = scoring.calculate_special_points(
-                    champ_input, vice_input, scorer_input, settings
-                )
+                pc, pv, ps = scoring.calculate_special_points(champ_input, vice_input, scorer_input, settings)
                 st.markdown("### 📊 Minha Auditoria de Pontos Especiais")
                 st.write(f"🏆 **Campeão:** {champ_input or '-'} (Pontos: {pc})")
                 st.write(f"🥈 **Vice:** {vice_input or '-'} (Pontos: {pv})")
@@ -194,7 +174,6 @@ def render_predictions_page():
 
             if submit_special and not specials_blocked:
                 try:
-                    # Grava ou atualiza os palpites no banco através da procedure robusta com UPSERT
                     db.save_special_prediction(
                         user_id=user_id,
                         champion=champ_input.strip(),
@@ -204,10 +183,10 @@ def render_predictions_page():
                     st.success("Seus palpites especiais de longo prazo foram gravados com sucesso!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Falha crítica ao tentar persistir palpites especiais: {e}")
+                    st.error(f"Falha ao salvar palpites especiais: {e}")
 
     # =========================================================================
-    # TAB 3: PALPITES DOS OUTROS (AUDITORIA E TRANSPARÊNCIA)
+    # TAB 3: PALPITES DOS OUTROS
     # =========================================================================
     with tab_all:
         st.subheader("Auditoria Geral de Apostas")
@@ -227,7 +206,6 @@ def render_predictions_page():
             p_status = phase_obj.get("status", "Aberta")
             p_id = phase_obj.get("id")
 
-            # Permite ver os palpites de jogos se a fase estiver Fechada ou Finalizada
             if scoring.can_view_all_predictions(p_status):
                 try:
                     all_preds = db.get_all_predictions(p_id)
@@ -238,27 +216,17 @@ def render_predictions_page():
                     st.info("Nenhum palpite encontrado para esta fase.")
                 else:
                     df_all = pd.DataFrame(all_preds)
-                    
-                    # Renomeia colunas amigavelmente para os participantes
                     rename_dict = {
-                        "full_name": "Participante",
-                        "home_team": "Mandante",
-                        "away_team": "Visitante",
-                        "home_score": "Casa",
-                        "away_score": "Fora",
-                        "game_datetime": "Salvo em"
+                        "full_name": "Participante", "home_team": "Mandante", "away_team": "Visitante",
+                        "home_score": "Casa", "away_score": "Fora", "game_datetime": "Salvo em"
                     }
-                    
                     available_cols = [c for c in rename_dict.keys() if c in df_all.columns]
                     df_display = df_all[available_cols].rename(columns=rename_dict)
-                    
                     st.dataframe(df_display, width="stretch", hide_index=True)
             else:
-                st.info(f"🔒 Os palpites das partidas da fase '{selected_p_name}' estão ocultos. Eles serão liberados assim que a fase for alterada para 'Fechada' ou 'Finalizada'.")
+                st.info(f"🔒 Os palpites das partidas da fase '{selected_p_name}' estão ocultos.")
 
-        # ---------------------------------------------------------------------
-        # SEÇÃO CORRIGIDA: PALPITES ESPECIAIS DE TODOS
-        # ---------------------------------------------------------------------
+        # Exibição correta e dinâmica da tabela geral dos palpites de longo prazo
         st.divider()
         st.subheader("Palpites especiais de todos")
         
@@ -277,8 +245,7 @@ def render_predictions_page():
 
             rows_sp = []
             for row in all_sp:
-                # CORREÇÃO CRÍTICA: Calcula dinamicamente em tempo de execução 
-                # impedindo que chaves nulas ou fixas em 0 no banco estraguem a exibição
+                # Chama a lógica python correta do scoring.py em tempo de execução
                 pc, pv, ps = scoring.calculate_special_points(
                     row.get("champion"),
                     row.get("vice"),
