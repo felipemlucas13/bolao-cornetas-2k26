@@ -9,8 +9,7 @@ import database as db
 import scoring
 
 def render_predictions_page():
-    st.title("🎯 Meus Palpites")
-
+    # 1. Validação de sessão no topo ANTES de renderizar qualquer HTML ou componente na tela
     if not st.session_state.get("logged_in"):
         st.warning("Por favor, faça login para acessar esta página.")
         return
@@ -18,6 +17,9 @@ def render_predictions_page():
     user = st.session_state.get("user", {})
     user_id = user.get("id")
     username = user.get("username", "")
+
+    # 2. Só cria os elementos visuais após garantir que as variáveis locais existem
+    st.title("🎯 Meus Palpites")
 
     tab_games, tab_special, tab_all = st.tabs([
         "⚽ Palpites dos Jogos", 
